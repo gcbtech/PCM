@@ -27,7 +27,7 @@ def show_method_selection(app):
     app.clear_container()
 
     # Title header
-    header = HeaderPanel(app.container, title="PCM (PC Mover) V1.1", subtitle="Choose a file migration method to begin.")
+    header = HeaderPanel(app.container, subtitle="Choose a file migration method to begin.")
     header.pack(fill="x", pady=(0, 20))
 
     # Create a grid container frame that is packed inside app.container

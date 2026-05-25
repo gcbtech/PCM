@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import manifest
 
 # Premium Visual Style Tokens
 BG_COLOR = "#121212"
@@ -39,8 +40,11 @@ class PremiumCard(ctk.CTkFrame):
 
 class HeaderPanel(ctk.CTkFrame):
     """Standard header banner displayed across all screens."""
-    def __init__(self, master, title="PCM (PC Mover) V1.1", subtitle="File Migration Utility", **kwargs):
+    def __init__(self, master, title=None, subtitle="File Migration Utility", **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
+        
+        if title is None:
+            title = f"PCM (PC Mover) V{manifest.CURRENT_VERSION}"
         
         # Grid layout
         self.columnconfigure(0, weight=1)
