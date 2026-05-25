@@ -138,18 +138,28 @@ def format_drive(drive_letter, label="PCM"):
         return True
         
     try:
-        # Run format command non-interactively
-        # /q: Quick Format, /fs:ntfs: File System NTFS, /v:Label: Volume Label, /x: Force Dismount
-        cmd = f"format {drive_letter} /fs:ntfs /v:{label} /q /x"
-        print(f"Executing: {cmd}")
-        
+        import re
+        # Sanitize label: strip any characters that could cause shell issues (not needed for
+        # list-based Popen, but good hygiene — NTFS max label length is 32 chars)
+        label = re.sub(r'[^\w\-]', '_', label)[:32]
+
+        # Use the full path to format.com and list-form Popen (no shell=True injection risk)
+        system32 = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32')
+        format_exe = os.path.join(system32, 'format.com')
+        if not os.path.exists(format_exe):
+            format_exe = 'format'  # Fallback to PATH resolution
+
+        # /q: Quick Format  /fs:ntfs: NTFS  /v:Label: Volume Label  /x: Force Dismount
+        cmd = [format_exe, drive_letter, '/fs:ntfs', f'/v:{label}', '/q', '/x']
+        print(f"Executing: {' '.join(cmd)}")
+
         # Popen allows us to feed input to stdin
         proc = subprocess.Popen(
-            cmd, 
-            shell=True, 
-            stdin=subprocess.PIPE, 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.PIPE, 
+            cmd,
+            shell=False,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True
         )
         

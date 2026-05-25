@@ -10,9 +10,9 @@ class PCMApp(ctk.CTk):
         super().__init__()
         
         # Window configuration
-        self.title("PCM (PC Mover) V0.1")
-        self.geometry("780x560")
-        self.minsize(700, 500)
+        self.title("PCM (PC Mover) V1.0")
+        self.geometry("780x640")
+        self.minsize(700, 580)
         self.configure(fg_color=BG_COLOR)
         
         # Center the window on screen
@@ -25,13 +25,18 @@ class PCMApp(ctk.CTk):
         # Shared state
         self.mode = mode  # "export" or "import"
         self.user_profiles = []
-        self.selected_profile = None
-        self.folders_info = {}
+        self.selected_profile = None        # Primary profile (first selected, backward compat)
+        self.selected_profiles = []         # All checked profiles for multi-user export
+        self.all_users_folders_info = {}    # {username: folders_info} for multi-user scan
+        self.folders_info = {}              # Aggregated folder info for the checklist view
         self.selected_folders = []
-        
-        self.selected_drive = None      # Selected removable drive (e.g. {'letter': 'E:', ...})
-        self.manifest_data = None       # Read when in import mode
-        self.conflict_pref = "replace"  # Default conflict resolution policy
+        self.migration_size_bytes = 0       # Estimated bytes to transfer (for progress %)
+
+        self.selected_drive = None          # Selected removable drive (e.g. {'letter': 'E:', ...})
+        self.manifest_data = None           # Read when in import mode
+        self.conflict_pref = "replace"      # Default conflict resolution policy
+        self.user_mappings = []             # Import: [{'src_username': str, 'dest_profile': UserProfile}]
+        self.transport_drive = None         # Path to the PCM transport drive root (import mode)
         
         # Container frame for current screen
         self.container = ctk.CTkFrame(self, fg_color="transparent")
@@ -72,7 +77,7 @@ class PCMApp(ctk.CTk):
 
     def set_title_subtitle(self, title, subtitle):
         """Sets the application title bar description dynamically."""
-        self.title(f"PCM (PC Mover) V0.1 - {title}")
+        self.title(f"PCM (PC Mover) V1.0 - {title}")
 
     def switch_to_export_mode(self):
         """Force switch to export mode via manual override."""

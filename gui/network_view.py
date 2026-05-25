@@ -3,14 +3,16 @@ import sys
 import random
 import threading
 import time
+import tempfile
 import customtkinter as ctk
 from gui.components import (
     PremiumCard, HeaderPanel, AppFonts,
-    ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED, BORDER_COLOR
+    ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED, BORDER_COLOR, CARD_COLOR
 )
 import scanner
 import bookmarks
 import network_engine
+from utils import format_bytes
 
 # Active references to running network threads
 current_receiver = None
@@ -25,7 +27,7 @@ def show_method_selection(app):
     app.clear_container()
 
     # Title header
-    header = HeaderPanel(app.container, title="PCM (PC Mover) V0.1", subtitle="Choose a file migration method to begin.")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) V1.0", subtitle="Choose a file migration method to begin.")
     header.pack(fill="x", pady=(0, 20))
 
     # Create a grid container frame that is packed inside app.container
@@ -533,14 +535,6 @@ def show_network_sender_checklist(app):
     size_summary_lbl = ctk.CTkLabel(summary_card, text="Selected: 0.00 B", font=AppFonts.BODY_BOLD, text_color=TEXT_PRIMARY)
     size_summary_lbl.pack(pady=5)
 
-    def get_friendly_bytes(bytes_count):
-        size = bytes_count
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size < 1024.0:
-                return f"{size:.2f} {unit}"
-            size /= 1024.0
-        return f"{size:.2f} TB"
-
     def update_size_estimate():
         checked = folder_checklist.get_selected_folders()
         total_bytes = 0
@@ -549,7 +543,7 @@ def show_network_sender_checklist(app):
             if info:
                 total_bytes += info.size_bytes
         total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
-        size_str = get_friendly_bytes(total_bytes)
+        size_str = format_bytes(total_bytes)
         size_summary_lbl.configure(text=f"Estimate Required:\n{size_str}")
 
     # Hook checkbox toggles
@@ -684,31 +678,30 @@ def initiate_network_sender(app, code):
                         except Exception:
                             pass
 
-        # Include browser bookmarks only if selected
-        if 'Browser Bookmarks' in app.selected_folders or 'Bookmarks' in app.selected_folders:
-            try:
-                temp_bookmarks_path = os.path.join(tempfile.gettempdir(), "_pcm_bookmarks")
-                if os.path.exists(temp_bookmarks_path):
-                    import shutil
-                    shutil.rmtree(temp_bookmarks_path)
-                os.makedirs(temp_bookmarks_path, exist_ok=True)
-                
-                bookmarks.export_bookmarks(current_profile.path, temp_bookmarks_path)
-                
-                # Walk bookmarks export and add to queue
-                for root, dirs, files in os.walk(temp_bookmarks_path):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        file_size = os.path.getsize(file_path)
-                        rel_path = os.path.relpath(file_path, temp_bookmarks_path)
-                        files_to_send.append({
-                            'src_path': file_path,
-                            'rel_path': rel_path,
-                            'size': file_size,
-                            'category': 'Bookmarks'
-                        })
-            except Exception as e:
-                print(f"[Network] Bookmark export exception: {e}")
+        # Always export browser bookmarks alongside file folders
+        try:
+            import shutil
+            temp_bookmarks_path = os.path.join(tempfile.gettempdir(), "_pcm_bookmarks_net")
+            if os.path.exists(temp_bookmarks_path):
+                shutil.rmtree(temp_bookmarks_path)
+            os.makedirs(temp_bookmarks_path, exist_ok=True)
+
+            bookmarks.export_browser_bookmarks(current_profile.path, temp_bookmarks_path)
+
+            # Walk bookmarks export and add to send queue
+            for root, dirs, files in os.walk(temp_bookmarks_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    file_size = os.path.getsize(file_path)
+                    rel_path = os.path.relpath(file_path, temp_bookmarks_path)
+                    files_to_send.append({
+                        'src_path': file_path,
+                        'rel_path': rel_path,
+                        'size': file_size,
+                        'category': 'Bookmarks'
+                    })
+        except Exception as e:
+            print(f"[Network] Bookmark export exception: {e}")
 
         if not files_to_send:
             app.after(0, lambda: show_network_error(app, "No files found to migrate in the selected folders!"))

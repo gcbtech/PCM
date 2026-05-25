@@ -2,6 +2,7 @@ import os
 import shutil
 import time
 import sys
+from utils import is_reparse_point
 
 def get_unique_path(target_path):
     """
@@ -22,18 +23,7 @@ def get_unique_path(target_path):
             return new_path
         counter += 1
 
-def is_reparse_point(path):
-    """
-    Checks if a file or directory is a Windows reparse point (junction, symlink, or cloud-only placeholder).
-    Reparse points can cause infinite loops or force slow cloud downloads on Windows.
-    """
-    if sys.platform != 'win32':
-        return os.path.islink(path)
-    try:
-        # 1024 corresponds to stat.FILE_ATTRIBUTE_REPARSE_POINT
-        return bool(os.lstat(path).st_file_attributes & 1024)
-    except Exception:
-        return False
+# is_reparse_point is imported from utils — see top of file
 
 def copy_file_chunked(src, dst, buffer_size=1024*1024, chunk_callback=None):
     """

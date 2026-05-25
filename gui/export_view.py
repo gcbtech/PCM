@@ -13,6 +13,7 @@ import drive_ops
 import bookmarks
 import copy_engine
 import manifest
+from utils import format_bytes
 
 def show_export_welcome_screen(app):
     app.set_title_subtitle("Export", "Welcome")
@@ -28,7 +29,7 @@ def show_export_welcome_screen(app):
     
     welcome_lbl = ctk.CTkLabel(
         card, 
-        text="Choose a User Profile to Migrate", 
+        text="Choose User Account(s) to Migrate", 
         font=AppFonts.HEADING_MEDIUM,
         text_color=TEXT_PRIMARY
     )
@@ -36,60 +37,56 @@ def show_export_welcome_screen(app):
     
     desc_lbl = ctk.CTkLabel(
         card, 
-        text="PCM will scan your profile folders (Desktop, Documents, Downloads, Photos, etc.)\nand browser bookmarks to transfer them to your new PC.",
+        text="PCM will scan your selected profile folders (Desktop, Documents, Downloads, Photos, etc.)\n"
+             "and browser bookmarks to transfer them to your new PC.\n"
+             "Check all accounts you want to migrate.",
         font=AppFonts.BODY,
         text_color=TEXT_SECONDARY,
         justify="center"
     )
-    desc_lbl.pack(pady=(0, 25))
+    desc_lbl.pack(pady=(0, 15))
     
     # Scanning profiles
     app.user_profiles = scanner.scan_user_profiles()
     
-    dropdown_frame = ctk.CTkFrame(card, fg_color="transparent")
-    dropdown_frame.pack(pady=10)
+    if len(app.user_profiles) <= 3:
+        # Use standard Frame to avoid showing an unnecessary, inactive scrollbar
+        checkbox_frame = ctk.CTkFrame(card, fg_color="transparent")
+    else:
+        # Use ScrollableFrame for systems with many user profiles
+        checkbox_frame = ctk.CTkScrollableFrame(card, fg_color="transparent", height=140)
+    checkbox_frame.pack(pady=5, padx=20, fill="x")
     
-    selected_username_var = ctk.StringVar()
+    check_vars = {}  # username -> BooleanVar
     
     if len(app.user_profiles) == 0:
-        error_lbl = ctk.CTkLabel(card, text="No active user profiles detected on this machine.", text_color=DANGER_RED, font=AppFonts.BODY_BOLD)
+        error_lbl = ctk.CTkLabel(card, text="No active user profiles detected on this machine.",
+                                 text_color=DANGER_RED, font=AppFonts.BODY_BOLD)
         error_lbl.pack(pady=10)
         start_btn_state = "disabled"
-    elif len(app.user_profiles) == 1:
-        app.selected_profile = app.user_profiles[0]
-        user_lbl = ctk.CTkLabel(dropdown_frame, text=f"Moving data for user account:  {app.selected_profile.username}", font=AppFonts.BODY_BOLD, text_color=SUCCESS_GREEN)
-        user_lbl.pack()
-        start_btn_state = "normal"
     else:
-        # Multiple users, show dropdown
-        profile_names = [p.username for p in app.user_profiles]
-        selected_username_var.set(profile_names[0])
-        app.selected_profile = app.user_profiles[0]
-        
-        lbl = ctk.CTkLabel(dropdown_frame, text="Select Account: ", font=AppFonts.BODY_BOLD, text_color=TEXT_PRIMARY)
-        lbl.pack(side="left", padx=5)
-        
-        def on_user_change(choice):
-            for p in app.user_profiles:
-                if p.username == choice:
-                    app.selected_profile = p
-                    break
-                    
-        user_drop = ctk.CTkOptionMenu(
-            dropdown_frame, 
-            values=profile_names, 
-            variable=selected_username_var, 
-            command=on_user_change,
-            fg_color=ACCENT_BLUE,
-            button_color=ACCENT_BLUE,
-            dropdown_fg_color=CARD_COLOR,
-            dropdown_hover_color=ACCENT_BLUE
-        )
-        user_drop.pack(side="left", padx=5)
+        for profile in app.user_profiles:
+            var = ctk.BooleanVar(value=True if len(app.user_profiles) == 1 else False)
+            check_vars[profile.username] = var
+            chk = ctk.CTkCheckBox(
+                checkbox_frame,
+                text=f"  {profile.username}  —  {profile.path}",
+                variable=var,
+                font=AppFonts.BODY_BOLD,
+                text_color=TEXT_PRIMARY,
+                fg_color=ACCENT_BLUE,
+                hover_color=ACCENT_BLUE,
+                checkmark_color=TEXT_PRIMARY
+            )
+            chk.pack(anchor="w", pady=4)
         start_btn_state = "normal"
-        
+
     def proceed_to_scan():
-        # Move to scan state
+        # Collect checked profiles
+        app.selected_profiles = [p for p in app.user_profiles if check_vars.get(p.username, ctk.BooleanVar()).get()]
+        if not app.selected_profiles:
+            return  # Nothing selected — ignore
+        app.selected_profile = app.selected_profiles[0]  # backward compat
         show_scanning_loading_screen(app)
         
     start_btn = ctk.CTkButton(
@@ -103,7 +100,7 @@ def show_export_welcome_screen(app):
         height=40,
         width=200
     )
-    start_btn.pack(pady=(30, 20))
+    start_btn.pack(pady=(20, 20))
     
     # Manual Mode Switch Override Link
     switch_btn = ctk.CTkButton(
@@ -141,7 +138,10 @@ def show_scanning_loading_screen(app):
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, pady=(0, 15))
     
-    lbl = ctk.CTkLabel(card, text="Analyzing Profile Folders...", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    user_count = len(app.selected_profiles)
+    scan_target = f"{user_count} account(s)" if user_count > 1 else (app.selected_profiles[0].username if app.selected_profiles else "profile")
+    lbl = ctk.CTkLabel(card, text=f"Analyzing Profile Folders for {scan_target}...",
+                       font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
     lbl.pack(pady=(80, 20))
     
     progress = ctk.CTkProgressBar(card, width=300, fg_color=BG_COLOR, progress_color=ACCENT_BLUE)
@@ -159,42 +159,42 @@ def show_scanning_loading_screen(app):
         import traceback
         running_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
         try:
-            with open(os.path.join(running_dir, "PCM_Thread_Start.log"), "w") as f:
-                f.write(f"Scan thread started at {time.strftime('%H:%M:%S')}\n")
-                f.write(f"Selected profile path: {app.selected_profile.path}\n")
-        except Exception:
-            pass
-            
-        try:
-            # Scan profile folders in a background thread with live status reporting
-            app.folders_info = scanner.scan_profile_folders(app.selected_profile.path, status_callback=update_status)
-            
-            # Scan browsers too
-            update_status("Detecting browser bookmark paths...")
-            app.detected_browsers = bookmarks.detect_browsers(app.selected_profile.path) if hasattr(bookmarks, 'detect_browsers') else ["Chrome", "Firefox", "Edge"]
+            app.all_users_folders_info = {}
+            for profile in app.selected_profiles:
+                app.after_idle(lambda u=profile.username: update_status(f"Scanning {u}..."))
+                fi = scanner.scan_profile_folders(profile.path, status_callback=update_status)
+                app.all_users_folders_info[profile.username] = fi
+
+            # Aggregate folder info for the checklist view
+            # Combine sizes across all selected users
+            merged = {}
+            for username, fi in app.all_users_folders_info.items():
+                for fname, finfo in fi.items():
+                    if fname not in merged:
+                        merged[fname] = scanner.FolderInfo(fname, finfo.path, finfo.exists,
+                                                           finfo.size_bytes, finfo.file_count)
+                    else:
+                        merged[fname].size_bytes += finfo.size_bytes
+                        merged[fname].file_count += finfo.file_count
+                        if not merged[fname].exists and finfo.exists:
+                            merged[fname].exists = True
+            app.folders_info = merged
             
             # Proceed to folder result view
             app.after(500, lambda: show_scan_results_screen(app))
         except Exception as e:
-            # Log full traceback for comprehensive error logging
             tb_str = traceback.format_exc()
             print(f"Exception during scan:\n{tb_str}")
-            
-            # Try to write to desktop
             try:
-                desktop = os.path.join(app.selected_profile.path, 'Desktop')
+                desktop = os.path.join(app.selected_profiles[0].path, 'Desktop')
                 log_file = os.path.join(desktop, "PCM_Scan_Debug_Error.txt")
                 with open(log_file, 'w', encoding='utf-8') as f:
                     f.write("PCM (PC Mover) Scan Error Diagnosis Log\n")
                     f.write("========================================\n\n")
                     f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"Error: {e}\n\n")
-                    f.write("Traceback details:\n")
-                    f.write(tb_str)
+                    f.write(f"Error: {e}\n\nTraceback details:\n{tb_str}")
             except Exception:
                 pass
-                
-            # Transition to error screen on GUI thread
             app.after_idle(lambda: show_error_screen(
                 app, 
                 "Scanning Encountered an Error", 
@@ -238,14 +238,6 @@ def show_scan_results_screen(app):
     
     size_summary_lbl = ctk.CTkLabel(drive_card, text="Selected: 0.00 B", font=AppFonts.BODY_BOLD, text_color=TEXT_PRIMARY)
     size_summary_lbl.pack(pady=5)
-    
-    def get_friendly_bytes(bytes_count):
-        size = bytes_count
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size < 1024.0:
-                return f"{size:.2f} {unit}"
-            size /= 1024.0
-        return f"{size:.2f} TB"
 
     def update_size_estimate():
         checked = folder_checklist.get_selected_folders()
@@ -259,7 +251,7 @@ def show_scan_results_screen(app):
         total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
         app.migration_size_bytes = total_bytes
         
-        size_str = get_friendly_bytes(total_bytes)
+        size_str = format_bytes(total_bytes)
         size_summary_lbl.configure(text=f"Estimate Required:  {size_str}")
         check_drive_suitability()
         
@@ -273,8 +265,8 @@ def show_scan_results_screen(app):
         
         values = []
         for d in detected_drives:
-            free_space = get_friendly_bytes(d['free_bytes'])
-            total_space = get_friendly_bytes(d['total_bytes'])
+            free_space = format_bytes(d['free_bytes'])
+            total_space = format_bytes(d['total_bytes'])
             desc = f"{d['letter']} ({d['label']}) - {total_space} Total"
             values.append(desc)
             
@@ -303,7 +295,7 @@ def show_scan_results_screen(app):
 
     def on_drive_select(choice):
         for d in detected_drives:
-            total_space = get_friendly_bytes(d['total_bytes'])
+            total_space = format_bytes(d['total_bytes'])
             desc = f"{d['letter']} ({d['label']}) - {total_space} Total"
             if choice == desc:
                 app.selected_drive = d
@@ -362,7 +354,7 @@ def show_scan_results_screen(app):
         total_space = app.selected_drive['total_bytes']
         
         if req_space > total_space:
-            size_diff = get_friendly_bytes(req_space - total_space)
+            size_diff = format_bytes(req_space - total_space)
             warning_lbl.configure(text=f"❌ NOT ENOUGH SPACE:\nDrive is too small by {size_diff}.", text_color=DANGER_RED)
             start_btn.configure(state="disabled", text="Drive Too Small", fg_color=BORDER_COLOR)
         else:
@@ -479,7 +471,7 @@ def show_progress_screen(app):
     card.pack(fill="both", expand=True, pady=(0, 15))
     
     op_title = ctk.CTkLabel(card, text="Preparing migration...", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
-    op_title.pack(pady=(40, 10))
+    op_title.pack(pady=(30, 10))
     
     progress = ctk.CTkProgressBar(card, width=450, fg_color=BG_COLOR, progress_color=ACCENT_BLUE)
     progress.pack(pady=10)
@@ -487,9 +479,15 @@ def show_progress_screen(app):
     
     percent_lbl = ctk.CTkLabel(card, text="0% completed (0.00 B / 0.00 B)", font=AppFonts.BODY, text_color=TEXT_SECONDARY)
     percent_lbl.pack(pady=5)
+
+    speed_lbl = ctk.CTkLabel(card, text="Speed: —", font=AppFonts.SMALL, text_color=TEXT_SECONDARY)
+    speed_lbl.pack(pady=2)
+
+    eta_lbl = ctk.CTkLabel(card, text="ETA: —", font=AppFonts.SMALL, text_color=TEXT_SECONDARY)
+    eta_lbl.pack(pady=2)
     
     detail_lbl = ctk.CTkLabel(card, text="", font=AppFonts.SMALL, text_color=TEXT_SECONDARY, justify="center")
-    detail_lbl.pack(pady=20, padx=20)
+    detail_lbl.pack(pady=15, padx=20)
     
     cancel_btn = ctk.CTkButton(card, text="Cancel", font=AppFonts.BODY_BOLD, fg_color=BORDER_COLOR, hover_color=DANGER_RED)
     cancel_btn.pack(side="bottom", pady=25)
@@ -502,31 +500,42 @@ def show_progress_screen(app):
         cancel_btn.configure(state="disabled", text="Cancelling...")
         
     cancel_btn.configure(command=on_cancel)
+
+    # Speed / ETA tracking shared state
+    _speed_state = {'last_bytes': 0, 'last_time': time.monotonic()}
     
     def progress_callback(file_path, bytes_just_copied, total_bytes_copied, total_files_copied):
-        # Update progress bar safely
         total_req = app.migration_size_bytes
         if total_req > 0:
             fraction = min(1.0, total_bytes_copied / total_req)
         else:
             fraction = 1.0
             
-        def get_friendly_bytes(bytes_count):
-            size = bytes_count
-            for unit in ['B', 'KB', 'MB', 'GB']:
-                if size < 1024.0:
-                    return f"{size:.2f} {unit}"
-                size /= 1024.0
-            return f"{size:.2f} GB"
-            
         percent = int(fraction * 100)
-        curr_str = get_friendly_bytes(total_bytes_copied)
-        req_str = get_friendly_bytes(total_req)
-        
-        # Strip deep directories for readable progress path
+        curr_str = format_bytes(total_bytes_copied)
+        req_str = format_bytes(total_req)
         filename = os.path.basename(file_path)
+
+        # Compute rolling speed every callback
+        now = time.monotonic()
+        elapsed = now - _speed_state['last_time']
+        delta_bytes = total_bytes_copied - _speed_state['last_bytes']
+        if elapsed >= 0.5 and delta_bytes > 0:
+            speed_bps = delta_bytes / elapsed
+            _speed_state['last_bytes'] = total_bytes_copied
+            _speed_state['last_time'] = now
+            speed_str = f"Speed: {format_bytes(speed_bps)}/s"
+            remaining = total_req - total_bytes_copied
+            eta_secs = remaining / speed_bps if speed_bps > 0 else 0
+            if eta_secs < 60:
+                eta_str = f"ETA: {int(eta_secs)}s"
+            elif eta_secs < 3600:
+                eta_str = f"ETA: {int(eta_secs // 60)}m {int(eta_secs % 60)}s"
+            else:
+                eta_str = f"ETA: {int(eta_secs // 3600)}h {int((eta_secs % 3600) // 60)}m"
+            app.after_idle(lambda ss=speed_str: speed_lbl.configure(text=ss))
+            app.after_idle(lambda es=eta_str: eta_lbl.configure(text=es))
         
-        # Apply GUI updates safely on main loop thread
         app.after_idle(lambda: progress.set(fraction))
         app.after_idle(lambda: percent_lbl.configure(text=f"{percent}% completed ({curr_str} / {req_str})"))
         app.after_idle(lambda: detail_lbl.configure(text=f"Copying file: ...\\{filename}"))
@@ -544,7 +553,9 @@ def show_progress_screen(app):
         
         success = drive_ops.format_drive(drive_letter, label="PCM_MOVE")
         if not success:
-            app.after_idle(lambda: show_error_screen(app, "Formatting Failed", "We were unable to format the external USB drive.\nPlease ensure it is plugged in, writable, and not locked by another process."))
+            app.after_idle(lambda: show_error_screen(app, "Formatting Failed",
+                "We were unable to format the external USB drive.\n"
+                "Please ensure it is plugged in, writable, and not locked by another process."))
             return
             
         if engine.cancelled:
@@ -558,58 +569,64 @@ def show_progress_screen(app):
         pcm_root = os.path.join(drive_letter + "\\", "_pcm_data")
         os.makedirs(pcm_root, exist_ok=True)
         
-        user_folder_details = []
         folder_sizes_manifest = {}
-        
-        for folder_name in app.selected_folders:
+        user_manifests = []
+
+        for profile in app.selected_profiles:
             if engine.cancelled:
                 break
-                
-            info = app.folders_info.get(folder_name)
-            if info and info.exists:
-                app.after_idle(lambda f=folder_name: detail_lbl.configure(text=f"Copying folder: {f}..."))
-                dest_dir = os.path.join(pcm_root, folder_name)
-                engine.copy_folder_recursive(info.path, dest_dir)
-                folder_sizes_manifest[folder_name] = info.size_bytes
+
+            user_folders_info = app.all_users_folders_info.get(profile.username, {})
+            user_selected_folders = app.selected_folders  # same checklist for all users
+
+            for folder_name in user_selected_folders:
+                if engine.cancelled:
+                    break
+                info = user_folders_info.get(folder_name)
+                if info and info.exists:
+                    app.after_idle(lambda f=folder_name, u=profile.username:
+                                   detail_lbl.configure(text=f"Copying {u}\\{f}..."))
+                    # Each user gets their own subdirectory on the drive
+                    dest_dir = os.path.join(pcm_root, profile.username, folder_name)
+                    engine.copy_folder_recursive(info.path, dest_dir)
+                    folder_sizes_manifest[folder_name] = folder_sizes_manifest.get(folder_name, 0) + info.size_bytes
+
+            # Bookmarks for each user
+            bookmarks_dest = os.path.join(pcm_root, profile.username, "_pcm_bookmarks")
+            exported_browsers = bookmarks.export_browser_bookmarks(profile.path, bookmarks_dest)
+
+            user_manifests.append({
+                "username": profile.username,
+                "folders": user_selected_folders,
+                "folder_sizes": folder_sizes_manifest.copy(),
+                "browsers": exported_browsers
+            })
                 
         if engine.cancelled:
             app.after_idle(lambda: show_export_welcome_screen(app))
             return
-            
-        # Step 3: Export Bookmarks
-        app.after_idle(lambda: op_title.configure(text="Exporting Browser Bookmarks..."))
-        app.after_idle(lambda: detail_lbl.configure(text="Detecting and extracting bookmarks..."))
-        
-        bookmarks_dest = os.path.join(pcm_root, "_pcm_bookmarks")
-        exported_browsers = bookmarks.export_browser_bookmarks(app.selected_profile.path, bookmarks_dest)
-        
-        # Step 4: Write Manifest
+
+        # Step 3: Write Manifest
         app.after_idle(lambda: op_title.configure(text="Writing Manifest..."))
         app.after_idle(lambda: detail_lbl.configure(text="Generating configuration file..."))
-        
-        user_manifest = {
-            "username": app.selected_profile.username,
-            "folders": app.selected_folders,
-            "folder_sizes": folder_sizes_manifest,
-            "browsers": exported_browsers
-        }
         
         manifest.create_manifest(
             drive_path=drive_letter + "\\",
             source_machine=os.environ.get('COMPUTERNAME', 'SOURCE-PC'),
-            source_users=[user_manifest],
+            source_users=user_manifests,
             total_size_bytes=engine.total_bytes_copied
         )
         
-        # Step 5: Copy self to drive root
+        # Step 4: Copy self to drive root
         app.after_idle(lambda: op_title.configure(text="Copying Launcher..."))
         app.after_idle(lambda: detail_lbl.configure(text="Copying PCM application to drive root for easy new PC launch..."))
         drive_ops.self_copy_to_drive(drive_letter)
         
-        # Step 6: Generate Log
-        engine.write_log_files(desktop_user_path=app.selected_profile.path, drive_root_path=drive_letter + "\\")
+        # Step 5: Generate Log
+        primary_profile = app.selected_profiles[0] if app.selected_profiles else app.selected_profile
+        engine.write_log_files(desktop_user_path=primary_profile.path, drive_root_path=drive_letter + "\\")
         
-        # Step 7: Eject Drive
+        # Step 6: Eject Drive
         app.after_idle(lambda: op_title.configure(text="Ejecting Drive..."))
         app.after_idle(lambda: detail_lbl.configure(text="Safely dismounting drive..."))
         ejected = drive_ops.eject_drive(drive_letter)
@@ -635,15 +652,7 @@ def show_complete_screen(app, total_files, total_bytes, ejected):
     title_lbl = ctk.CTkLabel(card, text="Your PCM Drive is Ready!", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
     title_lbl.pack(pady=5)
     
-    def get_friendly_bytes(bytes_count):
-        size = bytes_count
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024.0:
-                return f"{size:.2f} {unit}"
-            size /= 1024.0
-        return f"{size:.2f} GB"
-        
-    size_str = get_friendly_bytes(total_bytes)
+    size_str = format_bytes(total_bytes)
     
     status_str = "USB drive was successfully ejected." if ejected else "Failed to auto-eject. Please click 'Safely Remove Hardware' in Windows taskbar."
     text_color = SUCCESS_GREEN if ejected else WARNING_YELLOW

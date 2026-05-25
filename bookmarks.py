@@ -3,6 +3,7 @@ import json
 import sqlite3
 import shutil
 import glob
+import time
 
 def get_appdata_paths(user_path):
     """Returns local and roaming appdata paths for a given user profile path."""
@@ -384,11 +385,16 @@ def import_browser_bookmarks(source_bookmarks_dir, dest_user_path):
                 if entry.is_dir():
                     src_sqlite = os.path.join(entry.path, 'places.sqlite')
                     if os.path.exists(src_sqlite):
-                        # Copy to all active Firefox profiles since profiles have dynamic hashes (e.g. xxxxxxxx.default-release)
+                        # Copy to all active Firefox profiles since profiles have dynamic hashes
                         try:
                             for dest_prof in os.scandir(dest_ff_dir):
                                 if dest_prof.is_dir():
-                                    shutil.copy2(src_sqlite, os.path.join(dest_prof.path, 'places.sqlite'))
+                                    dest_sqlite = os.path.join(dest_prof.path, 'places.sqlite')
+                                    # Backup existing database before overwriting to prevent data loss
+                                    if os.path.exists(dest_sqlite):
+                                        backup_path = dest_sqlite + f'.pcm_backup_{int(time.time())}'
+                                        shutil.copy2(dest_sqlite, backup_path)
+                                    shutil.copy2(src_sqlite, dest_sqlite)
                             restored.append("Firefox")
                         except Exception:
                             pass

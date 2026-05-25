@@ -13,6 +13,7 @@ import drive_ops
 import bookmarks
 import copy_engine
 import manifest
+from utils import format_bytes
 
 def show_import_welcome_screen(app):
     app.set_title_subtitle("Import", "Welcome")
@@ -201,94 +202,140 @@ def show_import_welcome_screen(app):
     scan_for_pcm_drives()
 
 def show_target_user_screen(app):
+    """For each source user in the manifest, let the operator map them to a local account."""
     # Detect local users
     app.user_profiles = scanner.scan_user_profiles()
-    
-    if len(app.user_profiles) <= 1:
-        # If single user, auto-select and skip screen
+
+    source_users = app.manifest_data.get("source_users", [])
+
+    if not source_users:
+        # Nothing to map, go straight to conflict
+        show_conflict_screen(app)
+        return
+
+    # Auto-map when there is exactly one source user and one local profile
+    if len(source_users) == 1 and len(app.user_profiles) <= 1:
         if len(app.user_profiles) == 1:
             app.selected_profile = app.user_profiles[0]
         else:
-            # Fallback if no profile detected, write to current session username
             curr_user = os.environ.get('USERNAME', 'DefaultUser')
             users_dir = scanner.get_users_root()
             app.selected_profile = scanner.UserProfile(curr_user, os.path.join(users_dir, curr_user))
-            
+        app.user_mappings = [{'src_username': source_users[0]['username'], 'dest_profile': app.selected_profile}]
         show_conflict_screen(app)
         return
-        
-    app.set_title_subtitle("Import", "Target User")
+
+    app.set_title_subtitle("Import", "User Mapping")
     app.clear_container()
-    
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Target User", subtitle="Select destination account")
+
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — User Account Mapping",
+                         subtitle="Map source accounts to destination accounts")
     header.pack(fill="x")
-    
+
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, pady=(0, 15))
-    
+
     lbl = ctk.CTkLabel(
-        card, 
-        text="Select Destination User Account", 
+        card,
+        text="Map Source Accounts to Destination Accounts",
         font=AppFonts.HEADING_MEDIUM,
         text_color=TEXT_PRIMARY
     )
-    lbl.pack(pady=(40, 10))
-    
+    lbl.pack(pady=(30, 5))
+
     desc_lbl = ctk.CTkLabel(
-        card, 
-        text="We detected multiple local user profiles on this computer.\n"
-             "Please choose which user account should receive the migrated files.",
+        card,
+        text="For each user account found on the backup drive,\n"
+             "choose which local account on this PC should receive their files.",
         font=AppFonts.BODY,
         text_color=TEXT_SECONDARY,
         justify="center"
     )
-    desc_lbl.pack(pady=(0, 30))
-    
-    dropdown_frame = ctk.CTkFrame(card, fg_color="transparent")
-    dropdown_frame.pack(pady=10)
-    
+    desc_lbl.pack(pady=(0, 20))
+
+    if len(source_users) <= 3:
+        # Use standard Frame to avoid showing an unnecessary, inactive scrollbar
+        mapping_frame = ctk.CTkFrame(card, fg_color="transparent")
+    else:
+        # Use ScrollableFrame for systems with many user profiles
+        mapping_frame = ctk.CTkScrollableFrame(card, fg_color="transparent", height=200)
+    mapping_frame.pack(fill="x", padx=20, pady=5)
+    mapping_frame.columnconfigure(0, weight=1)
+    mapping_frame.columnconfigure(1, weight=0)
+    mapping_frame.columnconfigure(2, weight=1)
+
     profile_names = [p.username for p in app.user_profiles]
-    selected_username_var = ctk.StringVar(value=profile_names[0])
-    app.selected_profile = app.user_profiles[0]
-    
-    def on_user_change(choice):
-        for p in app.user_profiles:
-            if p.username == choice:
-                app.selected_profile = p
+    if not profile_names:
+        # No local profiles — offer to create mapping to current user
+        curr_user = os.environ.get('USERNAME', 'DefaultUser')
+        users_dir = scanner.get_users_root()
+        fallback = scanner.UserProfile(curr_user, os.path.join(users_dir, curr_user))
+        app.user_profiles = [fallback]
+        profile_names = [curr_user]
+
+    # Per-source-user StringVar for the dropdown selection
+    mapping_vars = {}  # src_username -> StringVar
+
+    for i, su in enumerate(source_users):
+        src_name = su['username']
+        src_lbl = ctk.CTkLabel(mapping_frame, text=f"Source: {src_name}",
+                               font=AppFonts.BODY_BOLD, text_color=SUCCESS_GREEN)
+        src_lbl.grid(row=i, column=0, sticky="w", pady=8, padx=5)
+
+        arrow_lbl = ctk.CTkLabel(mapping_frame, text="  →  ", font=AppFonts.BODY_BOLD, text_color=TEXT_SECONDARY)
+        arrow_lbl.grid(row=i, column=1, pady=8)
+
+        # Try to auto-match by username
+        default = profile_names[0]
+        for pname in profile_names:
+            if pname.lower() == src_name.lower():
+                default = pname
                 break
-                
-    lbl_sel = ctk.CTkLabel(dropdown_frame, text="Destination User: ", font=AppFonts.BODY_BOLD)
-    lbl_sel.pack(side="left", padx=5)
-    
-    user_drop = ctk.CTkOptionMenu(
-        dropdown_frame, 
-        values=profile_names, 
-        variable=selected_username_var, 
-        command=on_user_change,
-        fg_color=ACCENT_BLUE,
-        button_color=ACCENT_BLUE
-    )
-    user_drop.pack(side="left", padx=5)
-    
+
+        var = ctk.StringVar(value=default)
+        mapping_vars[src_name] = var
+
+        dest_drop = ctk.CTkOptionMenu(
+            mapping_frame,
+            values=profile_names,
+            variable=var,
+            fg_color=ACCENT_BLUE,
+            button_color=ACCENT_BLUE,
+            dropdown_fg_color=CARD_COLOR,
+            dropdown_hover_color=ACCENT_BLUE
+        )
+        dest_drop.grid(row=i, column=2, sticky="ew", pady=8, padx=5)
+
     btn_frame = ctk.CTkFrame(card, fg_color="transparent")
     btn_frame.pack(side="bottom", pady=25)
-    
+
     back_btn = ctk.CTkButton(
-        btn_frame, 
-        text="Go Back", 
-        font=AppFonts.BODY_BOLD, 
-        fg_color=BORDER_COLOR, 
+        btn_frame,
+        text="Go Back",
+        font=AppFonts.BODY_BOLD,
+        fg_color=BORDER_COLOR,
         command=lambda: show_import_welcome_screen(app),
         width=120
     )
     back_btn.pack(side="left", padx=10)
-    
+
+    def proceed():
+        # Build the mapping list from the current dropdown selections
+        app.user_mappings = []
+        for su in source_users:
+            src_name = su['username']
+            dest_username = mapping_vars[src_name].get()
+            dest_profile = next((p for p in app.user_profiles if p.username == dest_username), app.user_profiles[0])
+            app.user_mappings.append({'src_username': src_name, 'dest_profile': dest_profile})
+        app.selected_profile = app.user_mappings[0]['dest_profile']  # backward compat
+        show_conflict_screen(app)
+
     next_btn = ctk.CTkButton(
-        btn_frame, 
-        text="Continue", 
-        font=AppFonts.BODY_BOLD, 
+        btn_frame,
+        text="Continue",
+        font=AppFonts.BODY_BOLD,
         fg_color=ACCENT_BLUE,
-        command=lambda: show_conflict_screen(app),
+        command=proceed,
         width=120
     )
     next_btn.pack(side="right", padx=10)
@@ -370,11 +417,8 @@ def show_conflict_screen(app):
     btn_frame.pack(side="bottom", pady=25)
     
     def back_click():
-        # Go back either to User Selection or Drive Selection depending on count
-        if len(app.user_profiles) > 1:
-            show_target_user_screen(app)
-        else:
-            show_import_welcome_screen(app)
+        # Go back to the user mapping screen (which handles single-user auto-skip internally)
+        show_target_user_screen(app)
             
     back_btn = ctk.CTkButton(
         btn_frame, 
@@ -440,18 +484,9 @@ def show_import_progress_screen(app):
     
     def progress_callback(file_path, bytes_just_copied, total_bytes_copied, total_files_copied):
         fraction = min(1.0, total_bytes_copied / total_size_bytes)
-        
-        def get_friendly_bytes(bytes_count):
-            size = bytes_count
-            for unit in ['B', 'KB', 'MB', 'GB']:
-                if size < 1024.0:
-                    return f"{size:.2f} {unit}"
-                size /= 1024.0
-            return f"{size:.2f} GB"
-            
         percent = int(fraction * 100)
-        curr_str = get_friendly_bytes(total_bytes_copied)
-        req_str = get_friendly_bytes(total_size_bytes)
+        curr_str = format_bytes(total_bytes_copied)
+        req_str = format_bytes(total_size_bytes)
         filename = os.path.basename(file_path)
         
         app.after_idle(lambda: progress.set(fraction))
@@ -463,51 +498,72 @@ def show_import_progress_screen(app):
     def worker():
         # Source paths on PCM drive
         pcm_root = os.path.join(app.transport_drive, "_pcm_data")
-        user_info = app.manifest_data["source_users"][0]
-        migrated_folders = user_info["folders"]
-        
-        dest_user_path = app.selected_profile.path
-        
-        # Step 1: Copy Profile Folders
+        source_users = app.manifest_data.get("source_users", [])
+
+        # Ensure we have a mapping list (backward compat: single user with no explicit mapping)
+        if not app.user_mappings and source_users:
+            app.user_mappings = [{'src_username': source_users[0]['username'], 'dest_profile': app.selected_profile}]
+
+        # Step 1: Copy all mapped users' profile folders
         app.after_idle(lambda: op_title.configure(text="Restoring Personal Files..."))
-        
-        for folder_name in migrated_folders:
+
+        for mapping in app.user_mappings:
             if engine.cancelled:
                 break
-                
-            src_dir = os.path.join(pcm_root, folder_name)
-            if os.path.exists(src_dir):
-                app.after_idle(lambda f=folder_name: detail_lbl.configure(text=f"Restoring folder: {f}..."))
-                
-                # Construct exact local target folder
-                # Handle OneDrive mapping. If OneDrive is set on local target, place it in local OneDrive,
-                # otherwise standard folder.
-                od_path = os.path.join(dest_user_path, 'OneDrive', folder_name)
-                std_path = os.path.join(dest_user_path, folder_name)
-                
-                dest_dir = std_path
-                if os.path.exists(od_path):
-                    dest_dir = od_path
-                    
-                engine.copy_folder_recursive(src_dir, dest_dir)
-                
+            src_username = mapping['src_username']
+            dest_profile = mapping['dest_profile']
+            dest_user_path = dest_profile.path
+
+            # Find this source user's folder list from manifest
+            user_info = next((u for u in source_users if u['username'] == src_username), None)
+            migrated_folders = user_info['folders'] if user_info else []
+
+            for folder_name in migrated_folders:
+                if engine.cancelled:
+                    break
+                # Source may be stored per-user (new multi-user layout) or flat (old layout)
+                src_dir = os.path.join(pcm_root, src_username, folder_name)
+                if not os.path.exists(src_dir):
+                    src_dir = os.path.join(pcm_root, folder_name)  # Backward compat
+
+                if os.path.exists(src_dir):
+                    app.after_idle(lambda u=src_username, f=folder_name:
+                                   detail_lbl.configure(text=f"Restoring {u}\\{f}..."))
+
+                    # Handle OneDrive mapping
+                    od_path = os.path.join(dest_user_path, 'OneDrive', folder_name)
+                    std_path = os.path.join(dest_user_path, folder_name)
+                    dest_dir = od_path if os.path.exists(od_path) else std_path
+                    engine.copy_folder_recursive(src_dir, dest_dir)
+
         if engine.cancelled:
             app.after_idle(lambda: show_import_welcome_screen(app))
             return
-            
-        # Step 2: Import Bookmarks
+
+        # Step 2: Import Bookmarks for each mapped user
         app.after_idle(lambda: op_title.configure(text="Restoring Browser Bookmarks..."))
         app.after_idle(lambda: detail_lbl.configure(text="Injecting bookmarks and exporting HTML backups..."))
-        
-        src_bookmarks = os.path.join(pcm_root, "_pcm_bookmarks")
-        restored_browsers, desktop_fallback = bookmarks.import_browser_bookmarks(src_bookmarks, dest_user_path)
-        
+
+        for mapping in app.user_mappings:
+            src_username = mapping['src_username']
+            dest_profile = mapping['dest_profile']
+            # Per-user bookmarks (new layout) with flat fallback
+            src_bookmarks = os.path.join(pcm_root, src_username, "_pcm_bookmarks")
+            if not os.path.exists(src_bookmarks):
+                src_bookmarks = os.path.join(pcm_root, "_pcm_bookmarks")
+            bookmarks.import_browser_bookmarks(src_bookmarks, dest_profile.path)
+
         # Step 3: Write logs
-        # Generate and save log copies on desktop + transport drive
-        engine.write_log_files(desktop_user_path=dest_user_path, drive_root_path=app.transport_drive)
+        primary_dest = app.user_mappings[0]['dest_profile'] if app.user_mappings else app.selected_profile
+        engine.write_log_files(desktop_user_path=primary_dest.path, drive_root_path=app.transport_drive)
+
+        restored_browsers = []
+        desktop_fallback = os.path.join(primary_dest.path, 'Desktop', 'PCM Migrated Bookmarks')
+        desktop_fallback = desktop_fallback if os.path.exists(desktop_fallback) else None
         
         # End State
-        app.after_idle(lambda: show_complete_screen(app, engine.total_files_copied, engine.total_bytes_copied, restored_browsers, desktop_fallback))
+        app.after_idle(lambda: show_complete_screen(app, engine.total_files_copied, engine.total_bytes_copied,
+                                                    restored_browsers, desktop_fallback))
         
     threading.Thread(target=worker, daemon=True).start()
 
@@ -527,15 +583,7 @@ def show_complete_screen(app, total_files, total_bytes, restored_browsers, deskt
     title_lbl = ctk.CTkLabel(card, text="Files Restored Successfully!", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
     title_lbl.pack(pady=5)
     
-    def get_friendly_bytes(bytes_count):
-        size = bytes_count
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size < 1024.0:
-                return f"{size:.2f} {unit}"
-            size /= 1024.0
-        return f"{size:.2f} GB"
-        
-    size_str = get_friendly_bytes(total_bytes)
+    size_str = format_bytes(total_bytes)
     
     # Bookmarks summary
     b_desc = ""

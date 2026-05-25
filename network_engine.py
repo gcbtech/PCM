@@ -63,21 +63,21 @@ def generate_self_signed_cert():
         critical=False,
     ).sign(private_key, hashes.SHA256())
     
-    temp_dir = tempfile.gettempdir()
-    cert_path = os.path.join(temp_dir, "pcm_temp_cert.crt")
-    key_path = os.path.join(temp_dir, "pcm_temp_key.key")
-    
-    with open(cert_path, "wb") as f:
-        f.write(cert.public_bytes(serialization.Encoding.PEM))
-        
-    with open(key_path, "wb") as f:
-        f.write(private_key.private_bytes(
+    # Use mkstemp so temp filenames are unpredictable (not world-guessable)
+    cert_fd, cert_path = tempfile.mkstemp(suffix='.crt', prefix='pcm_')
+    key_fd, key_path = tempfile.mkstemp(suffix='.key', prefix='pcm_')
+    try:
+        os.write(cert_fd, cert.public_bytes(serialization.Encoding.PEM))
+        os.write(key_fd, private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.TraditionalOpenSSL,
             encryption_algorithm=serialization.NoEncryption(),
         ))
-        
-    print(f"[Network] Certificate written to: {cert_path}")
+    finally:
+        os.close(cert_fd)
+        os.close(key_fd)
+
+    print(f"[Network] Ephemeral certificate created (will be deleted after SSL load).")
     return cert_path, key_path
 
 def add_firewall_rule():
@@ -180,14 +180,12 @@ def get_local_ips():
     except Exception:
         pass
     
-    # Fallback/alternative
+    # Fallback/alternative: route via UDP socket to get preferred outbound interface
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
+        ip = s.getsockname()[0]  # Read BEFORE closing
         s.close()
-        if ip not in ips:
-            ip = s.getsockname()[0]
         if ip not in ips:
             ips.append(ip)
     except Exception:
@@ -244,13 +242,13 @@ class PCMNetworkReceiver:
                 self.server_sock.close()
             except Exception:
                 pass
-        # Clean up certs
-        if self.cert_path and os.path.exists(self.cert_path):
-            try:
-                os.remove(self.cert_path)
-                os.remove(self.key_path)
-            except Exception:
-                pass
+        # Clean up cert files — may already be None if deleted after SSL load
+        for cert_file in (self.cert_path, self.key_path):
+            if cert_file and os.path.exists(cert_file):
+                try:
+                    os.remove(cert_file)
+                except Exception:
+                    pass
 
     def run(self):
         """Executes the Receiver server loop. Should be run in a background thread."""
@@ -279,6 +277,15 @@ class PCMNetworkReceiver:
             # Wrap with SSL
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(certfile=self.cert_path, keyfile=self.key_path)
+            # Security: delete private key from disk immediately after loading into SSLContext.
+            # SSLContext retains the key in process memory; the file is no longer needed.
+            for cert_file in (self.cert_path, self.key_path):
+                try:
+                    os.remove(cert_file)
+                except Exception:
+                    pass
+            self.cert_path = None
+            self.key_path = None
             self.ssl_conn = context.wrap_socket(conn, server_side=True)
             print("[Network] SSL/TLS handshake complete.")
 
@@ -357,7 +364,24 @@ class PCMNetworkReceiver:
                 # Resolve destination folder
                 dst_root = category_dirs.get(category, category_dirs['Documents'])
                 dst_file_path = os.path.join(dst_root, rel_path)
-                os.makedirs(os.path.dirname(dst_file_path), exist_ok=True)
+
+                # Security: prevent path traversal attacks from malicious senders.
+                # A crafted rel_path like '../../Windows/System32/evil.dll' must be blocked.
+                abs_dst_root = os.path.abspath(dst_root)
+                abs_dst_file = os.path.abspath(dst_file_path)
+                if not abs_dst_file.startswith(abs_dst_root + os.sep):
+                    print(f"[Security] Blocked path traversal attempt: {rel_path!r}")
+                    skip_current = True
+                    log_entries.append({
+                        'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
+                        'status': 'ERROR',
+                        'src': rel_path,
+                        'dst': '(blocked)',
+                        'size': 0,
+                        'error': 'Path traversal attempt blocked'
+                    })
+                else:
+                    os.makedirs(os.path.dirname(dst_file_path), exist_ok=True)
                 
                 # Handle conflict resolution
                 skip_current = False

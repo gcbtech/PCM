@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+from utils import is_reparse_point, format_bytes
 
 # System accounts to filter out
 SYSTEM_ACCOUNTS = {
@@ -24,12 +25,7 @@ class FolderInfo:
         self.file_count = file_count
 
     def get_friendly_size(self):
-        size = self.size_bytes
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size < 1024.0:
-                return f"{size:.2f} {unit}"
-            size /= 1024.0
-        return f"{size:.2f} TB"
+        return format_bytes(self.size_bytes)
 
 def get_users_root():
     """Returns the base Users directory, typically C:\\Users"""
@@ -100,18 +96,7 @@ def scan_user_profiles():
         
     return profiles
 
-def is_reparse_point(path):
-    """
-    Checks if a file or directory is a Windows reparse point (junction, symlink, or cloud-only placeholder).
-    Reparse points can cause infinite loops or force slow cloud downloads on Windows.
-    """
-    if sys.platform != 'win32':
-        return os.path.islink(path)
-    try:
-        # 1024 corresponds to stat.FILE_ATTRIBUTE_REPARSE_POINT
-        return bool(os.lstat(path).st_file_attributes & 1024)
-    except Exception:
-        return False
+# is_reparse_point is imported from utils — see top of file
 
 def get_folder_stats(folder_path):
     """
