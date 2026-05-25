@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# PyInstaller
+# We exclude the build directories to avoid tracking temporary compilation objects.
+build/
+dist/
+*.spec
+
+# Logs and debug files
+*.log
+PCM_Scan_Step_Debug.log
+PCM_Thread_Start.log
+PCM_Scan_Debug_Error.txt
+PCM_Migration_Log.txt
+PCM_Network_Migration_Log.txt
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Editor settings
+.vscode/
+.idea/

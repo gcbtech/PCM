@@ -1,0 +1,726 @@
+import os
+import sys
+import threading
+import time
+import customtkinter as ctk
+from gui.components import (
+    PremiumCard, HeaderPanel, ScrollableFolderList, AppFonts,
+    ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED,
+    BG_COLOR, BORDER_COLOR, CARD_COLOR
+)
+import scanner
+import drive_ops
+import bookmarks
+import copy_engine
+import manifest
+
+def show_export_welcome_screen(app):
+    app.set_title_subtitle("Export", "Welcome")
+    app.clear_container()
+    
+    # Header
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Files", subtitle="Let's prepare your files for migration")
+    header.pack(fill="x")
+    
+    # Body Card
+    card = PremiumCard(app.container)
+    card.pack(fill="both", expand=True, pady=(0, 15))
+    
+    welcome_lbl = ctk.CTkLabel(
+        card, 
+        text="Choose a User Profile to Migrate", 
+        font=AppFonts.HEADING_MEDIUM,
+        text_color=TEXT_PRIMARY
+    )
+    welcome_lbl.pack(pady=(25, 10))
+    
+    desc_lbl = ctk.CTkLabel(
+        card, 
+        text="PCM will scan your profile folders (Desktop, Documents, Downloads, Photos, etc.)\nand browser bookmarks to transfer them to your new PC.",
+        font=AppFonts.BODY,
+        text_color=TEXT_SECONDARY,
+        justify="center"
+    )
+    desc_lbl.pack(pady=(0, 25))
+    
+    # Scanning profiles
+    app.user_profiles = scanner.scan_user_profiles()
+    
+    dropdown_frame = ctk.CTkFrame(card, fg_color="transparent")
+    dropdown_frame.pack(pady=10)
+    
+    selected_username_var = ctk.StringVar()
+    
+    if len(app.user_profiles) == 0:
+        error_lbl = ctk.CTkLabel(card, text="No active user profiles detected on this machine.", text_color=DANGER_RED, font=AppFonts.BODY_BOLD)
+        error_lbl.pack(pady=10)
+        start_btn_state = "disabled"
+    elif len(app.user_profiles) == 1:
+        app.selected_profile = app.user_profiles[0]
+        user_lbl = ctk.CTkLabel(dropdown_frame, text=f"Moving data for user account:  {app.selected_profile.username}", font=AppFonts.BODY_BOLD, text_color=SUCCESS_GREEN)
+        user_lbl.pack()
+        start_btn_state = "normal"
+    else:
+        # Multiple users, show dropdown
+        profile_names = [p.username for p in app.user_profiles]
+        selected_username_var.set(profile_names[0])
+        app.selected_profile = app.user_profiles[0]
+        
+        lbl = ctk.CTkLabel(dropdown_frame, text="Select Account: ", font=AppFonts.BODY_BOLD, text_color=TEXT_PRIMARY)
+        lbl.pack(side="left", padx=5)
+        
+        def on_user_change(choice):
+            for p in app.user_profiles:
+                if p.username == choice:
+                    app.selected_profile = p
+                    break
+                    
+        user_drop = ctk.CTkOptionMenu(
+            dropdown_frame, 
+            values=profile_names, 
+            variable=selected_username_var, 
+            command=on_user_change,
+            fg_color=ACCENT_BLUE,
+            button_color=ACCENT_BLUE,
+            dropdown_fg_color=CARD_COLOR,
+            dropdown_hover_color=ACCENT_BLUE
+        )
+        user_drop.pack(side="left", padx=5)
+        start_btn_state = "normal"
+        
+    def proceed_to_scan():
+        # Move to scan state
+        show_scanning_loading_screen(app)
+        
+    start_btn = ctk.CTkButton(
+        card, 
+        text="Scan My Files", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        state=start_btn_state,
+        command=proceed_to_scan,
+        height=40,
+        width=200
+    )
+    start_btn.pack(pady=(30, 20))
+    
+    # Manual Mode Switch Override Link
+    switch_btn = ctk.CTkButton(
+        app.container,
+        text="Already have a PCM drive? Switch to Import Mode →",
+        font=AppFonts.SMALL,
+        fg_color="transparent",
+        hover=False,
+        text_color=ACCENT_BLUE,
+        cursor="hand2",
+        command=app.switch_to_import_mode
+    )
+    switch_btn.pack(pady=5)
+
+    from gui.network_view import show_method_selection
+    back_btn = ctk.CTkButton(
+        app.container,
+        text="← Back to Transfer Method Selection",
+        font=AppFonts.SMALL,
+        fg_color="transparent",
+        hover=False,
+        text_color=TEXT_SECONDARY,
+        cursor="hand2",
+        command=lambda: show_method_selection(app)
+    )
+    back_btn.pack(pady=5)
+
+def show_scanning_loading_screen(app):
+    app.set_title_subtitle("Export", "Scanning")
+    app.clear_container()
+    
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Files", subtitle="Scanning files and folders")
+    header.pack(fill="x")
+    
+    card = PremiumCard(app.container)
+    card.pack(fill="both", expand=True, pady=(0, 15))
+    
+    lbl = ctk.CTkLabel(card, text="Analyzing Profile Folders...", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    lbl.pack(pady=(80, 20))
+    
+    progress = ctk.CTkProgressBar(card, width=300, fg_color=BG_COLOR, progress_color=ACCENT_BLUE)
+    progress.pack(pady=10)
+    progress.set(0)
+    progress.start()
+    
+    sub_lbl = ctk.CTkLabel(card, text="Preparing to scan folders...", font=AppFonts.BODY, text_color=TEXT_SECONDARY)
+    sub_lbl.pack(pady=10)
+    
+    def update_status(text):
+        app.after_idle(lambda: sub_lbl.configure(text=text))
+        
+    def run_scan():
+        import traceback
+        running_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+        try:
+            with open(os.path.join(running_dir, "PCM_Thread_Start.log"), "w") as f:
+                f.write(f"Scan thread started at {time.strftime('%H:%M:%S')}\n")
+                f.write(f"Selected profile path: {app.selected_profile.path}\n")
+        except Exception:
+            pass
+            
+        try:
+            # Scan profile folders in a background thread with live status reporting
+            app.folders_info = scanner.scan_profile_folders(app.selected_profile.path, status_callback=update_status)
+            
+            # Scan browsers too
+            update_status("Detecting browser bookmark paths...")
+            app.detected_browsers = bookmarks.detect_browsers(app.selected_profile.path) if hasattr(bookmarks, 'detect_browsers') else ["Chrome", "Firefox", "Edge"]
+            
+            # Proceed to folder result view
+            app.after(500, lambda: show_scan_results_screen(app))
+        except Exception as e:
+            # Log full traceback for comprehensive error logging
+            tb_str = traceback.format_exc()
+            print(f"Exception during scan:\n{tb_str}")
+            
+            # Try to write to desktop
+            try:
+                desktop = os.path.join(app.selected_profile.path, 'Desktop')
+                log_file = os.path.join(desktop, "PCM_Scan_Debug_Error.txt")
+                with open(log_file, 'w', encoding='utf-8') as f:
+                    f.write("PCM (PC Mover) Scan Error Diagnosis Log\n")
+                    f.write("========================================\n\n")
+                    f.write(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"Error: {e}\n\n")
+                    f.write("Traceback details:\n")
+                    f.write(tb_str)
+            except Exception:
+                pass
+                
+            # Transition to error screen on GUI thread
+            app.after_idle(lambda: show_error_screen(
+                app, 
+                "Scanning Encountered an Error", 
+                f"An unhandled error occurred during file scanning:\n\n{str(e)}\n\n"
+                "A diagnostic debug log has been saved to your Desktop."
+            ))
+        
+    threading.Thread(target=run_scan, daemon=True).start()
+
+def show_scan_results_screen(app):
+    app.set_title_subtitle("Export", "Configure")
+    app.clear_container()
+    
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Files", subtitle="Configure files and target drive")
+    header.pack(fill="x")
+    
+    # Outer frame to arrange folder list and drive selection
+    body = ctk.CTkFrame(app.container, fg_color="transparent")
+    body.pack(fill="both", expand=True, pady=(0, 10))
+    
+    body.columnconfigure(0, weight=3) # Folder List
+    body.columnconfigure(1, weight=2) # Drive Selection Panel
+    
+    # Left side: Folder Checklist
+    folder_checklist = ScrollableFolderList(body, app.folders_info)
+    folder_checklist.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    
+    # Right side: Target drive options Card
+    drive_card = PremiumCard(body)
+    drive_card.grid(row=0, column=1, sticky="nsew")
+    drive_card.columnconfigure(0, weight=1)
+    
+    title_lbl = ctk.CTkLabel(drive_card, text="Target USB/Flash Drive", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    title_lbl.pack(pady=(20, 15), padx=10)
+    
+    drive_letter_var = ctk.StringVar()
+    detected_drives = []
+    
+    drive_dropdown = None
+    warning_lbl = None
+    
+    size_summary_lbl = ctk.CTkLabel(drive_card, text="Selected: 0.00 B", font=AppFonts.BODY_BOLD, text_color=TEXT_PRIMARY)
+    size_summary_lbl.pack(pady=5)
+    
+    def get_friendly_bytes(bytes_count):
+        size = bytes_count
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+            size /= 1024.0
+        return f"{size:.2f} TB"
+
+    def update_size_estimate():
+        checked = folder_checklist.get_selected_folders()
+        total_bytes = 0
+        for name in checked:
+            info = app.folders_info.get(name)
+            if info:
+                total_bytes += info.size_bytes
+                
+        # Buffer of 50MB or 5% overhead for bookmarks + PCM executable
+        total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
+        app.migration_size_bytes = total_bytes
+        
+        size_str = get_friendly_bytes(total_bytes)
+        size_summary_lbl.configure(text=f"Estimate Required:  {size_str}")
+        check_drive_suitability()
+        
+    # Hook checkbox toggles to recalculate sizes
+    for item in folder_checklist.checkboxes.values():
+        item['checkbox'].configure(command=update_size_estimate)
+        
+    def scan_drives():
+        nonlocal detected_drives
+        detected_drives = drive_ops.list_removable_drives()
+        
+        values = []
+        for d in detected_drives:
+            free_space = get_friendly_bytes(d['free_bytes'])
+            total_space = get_friendly_bytes(d['total_bytes'])
+            desc = f"{d['letter']} ({d['label']}) - {total_space} Total"
+            values.append(desc)
+            
+        if not values:
+            drive_letter_var.set("No drive detected (Preview Mode)")
+            if drive_dropdown:
+                drive_dropdown.configure(
+                    values=["No drive detected (Preview Mode)"], 
+                    state="disabled",
+                    fg_color=BORDER_COLOR,
+                    button_color=BORDER_COLOR
+                )
+            app.selected_drive = None
+        else:
+            drive_letter_var.set(values[0])
+            if drive_dropdown:
+                drive_dropdown.configure(
+                    values=values, 
+                    state="normal",
+                    fg_color=ACCENT_BLUE,
+                    button_color=ACCENT_BLUE
+                )
+            app.selected_drive = detected_drives[0]
+            
+        update_size_estimate()
+
+    def on_drive_select(choice):
+        for d in detected_drives:
+            total_space = get_friendly_bytes(d['total_bytes'])
+            desc = f"{d['letter']} ({d['label']}) - {total_space} Total"
+            if choice == desc:
+                app.selected_drive = d
+                break
+        check_drive_suitability()
+        
+    # Drive drop down
+    drive_sel_frame = ctk.CTkFrame(drive_card, fg_color="transparent")
+    drive_sel_frame.pack(pady=10, padx=10, fill="x")
+    
+    drive_dropdown = ctk.CTkOptionMenu(
+        drive_sel_frame, 
+        values=["Scanning drives..."], 
+        variable=drive_letter_var, 
+        command=on_drive_select,
+        fg_color=ACCENT_BLUE,
+        button_color=ACCENT_BLUE,
+        dropdown_fg_color=CARD_COLOR,
+        dropdown_hover_color=ACCENT_BLUE
+    )
+    drive_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 5))
+    
+    refresh_btn = ctk.CTkButton(
+        drive_sel_frame, 
+        text="↻", 
+        width=35, 
+        fg_color=BORDER_COLOR, 
+        hover_color=ACCENT_BLUE,
+        command=scan_drives
+    )
+    refresh_btn.pack(side="right")
+    
+    warning_lbl = ctk.CTkLabel(
+        drive_card, 
+        text="Please insert a USB drive", 
+        font=AppFonts.SMALL, 
+        text_color=WARNING_YELLOW, 
+        justify="center"
+    )
+    warning_lbl.pack(pady=10, padx=10)
+    
+    def check_drive_suitability():
+        checked = folder_checklist.get_selected_folders()
+        if not checked:
+            warning_lbl.configure(text="⚠️ Select at least one folder to move.", text_color=WARNING_YELLOW)
+            start_btn.configure(state="disabled", fg_color=BORDER_COLOR)
+            return
+            
+        if not app.selected_drive:
+            warning_lbl.configure(text="ℹ️ PREVIEW MODE:\nPlug in a USB drive to export files.\nShowing estimates only.", text_color=ACCENT_BLUE)
+            start_btn.configure(state="disabled", text="Drive Required", fg_color=BORDER_COLOR)
+            return
+            
+        # Check capacity
+        req_space = app.migration_size_bytes
+        total_space = app.selected_drive['total_bytes']
+        
+        if req_space > total_space:
+            size_diff = get_friendly_bytes(req_space - total_space)
+            warning_lbl.configure(text=f"❌ NOT ENOUGH SPACE:\nDrive is too small by {size_diff}.", text_color=DANGER_RED)
+            start_btn.configure(state="disabled", text="Drive Too Small", fg_color=BORDER_COLOR)
+        else:
+            warning_lbl.configure(text="✓ Drive is ready.\nFormatting is required.", text_color=SUCCESS_GREEN)
+            start_btn.configure(state="normal", text="Start Migration", fg_color=ACCENT_BLUE)
+
+    def proceed_to_confirm():
+        app.selected_folders = folder_checklist.get_selected_folders()
+        show_format_warning_screen(app)
+
+    start_btn = ctk.CTkButton(
+        drive_card, 
+        text="Start Migration", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        command=proceed_to_confirm,
+        height=40
+    )
+    start_btn.pack(side="bottom", fill="x", pady=25, padx=20)
+    
+    # Trigger initial scan
+    scan_drives()
+
+def show_format_warning_screen(app):
+    app.set_title_subtitle("Export", "Warning")
+    app.clear_container()
+    
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — Format Warning", subtitle="Destructive operation confirmation")
+    header.pack(fill="x")
+    
+    card = PremiumCard(app.container)
+    card.pack(fill="both", expand=True, pady=(0, 15))
+    
+    warn_icon = ctk.CTkLabel(card, text="⚠️", font=("Segoe UI", 48, "normal"), text_color=WARNING_YELLOW)
+    warn_icon.pack(pady=(20, 10))
+    
+    title_lbl = ctk.CTkLabel(card, text="WARNING: Drive Formatting Required!", font=AppFonts.HEADING_MEDIUM, text_color=DANGER_RED)
+    title_lbl.pack(pady=5)
+    
+    drive = app.selected_drive
+    desc_str = f"Drive: {drive['letter']}  |  Label: '{drive['label']}'  |  Type: {drive['type_desc']}"
+    
+    info_lbl = ctk.CTkLabel(
+        card, 
+        text=f"PCM (PC Mover) must format the target drive before copying files to guarantee NTFS reliability.\n\n"
+             f"{desc_str}\n\n"
+             "ALL existing files on this drive will be PERMANENTLY DELETED.",
+        font=AppFonts.BODY,
+        text_color=TEXT_PRIMARY,
+        justify="center"
+    )
+    info_lbl.pack(pady=20, padx=20)
+    
+    chk_var = ctk.StringVar(value="off")
+    
+    def on_check():
+        if chk_var.get() == "on":
+            format_btn.configure(state="normal", fg_color=DANGER_RED, hover_color=DANGER_RED)
+        else:
+            format_btn.configure(state="disabled", fg_color=BORDER_COLOR)
+
+    chk = ctk.CTkCheckBox(
+        card, 
+        text="I understand that formatting will erase all data currently on this drive", 
+        font=AppFonts.BODY_BOLD,
+        text_color=TEXT_PRIMARY,
+        variable=chk_var,
+        onvalue="on",
+        offvalue="off",
+        command=on_check,
+        checkmark_color=TEXT_PRIMARY,
+        fg_color=DANGER_RED,
+        hover_color=DANGER_RED
+    )
+    chk.pack(pady=10)
+    
+    btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+    btn_frame.pack(side="bottom", pady=25)
+    
+    back_btn = ctk.CTkButton(
+        btn_frame, 
+        text="Go Back", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=BORDER_COLOR, 
+        hover_color=ACCENT_BLUE,
+        command=lambda: show_scan_results_screen(app),
+        width=120
+    )
+    back_btn.pack(side="left", padx=10)
+    
+    def start_export_thread():
+        show_progress_screen(app)
+        
+    format_btn = ctk.CTkButton(
+        btn_frame, 
+        text="Format & Export", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=BORDER_COLOR,
+        state="disabled",
+        command=start_export_thread,
+        width=180
+    )
+    format_btn.pack(side="right", padx=10)
+
+def show_progress_screen(app):
+    app.set_title_subtitle("Export", "Progress")
+    app.clear_container()
+    
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — Exporting", subtitle="Moving your files to the transport drive...")
+    header.pack(fill="x")
+    
+    card = PremiumCard(app.container)
+    card.pack(fill="both", expand=True, pady=(0, 15))
+    
+    op_title = ctk.CTkLabel(card, text="Preparing migration...", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    op_title.pack(pady=(40, 10))
+    
+    progress = ctk.CTkProgressBar(card, width=450, fg_color=BG_COLOR, progress_color=ACCENT_BLUE)
+    progress.pack(pady=10)
+    progress.set(0.0)
+    
+    percent_lbl = ctk.CTkLabel(card, text="0% completed (0.00 B / 0.00 B)", font=AppFonts.BODY, text_color=TEXT_SECONDARY)
+    percent_lbl.pack(pady=5)
+    
+    detail_lbl = ctk.CTkLabel(card, text="", font=AppFonts.SMALL, text_color=TEXT_SECONDARY, justify="center")
+    detail_lbl.pack(pady=20, padx=20)
+    
+    cancel_btn = ctk.CTkButton(card, text="Cancel", font=AppFonts.BODY_BOLD, fg_color=BORDER_COLOR, hover_color=DANGER_RED)
+    cancel_btn.pack(side="bottom", pady=25)
+    
+    # State tracker for cancel
+    engine = copy_engine.CopyEngine(conflict_pref="replace")
+    
+    def on_cancel():
+        engine.cancel()
+        cancel_btn.configure(state="disabled", text="Cancelling...")
+        
+    cancel_btn.configure(command=on_cancel)
+    
+    def progress_callback(file_path, bytes_just_copied, total_bytes_copied, total_files_copied):
+        # Update progress bar safely
+        total_req = app.migration_size_bytes
+        if total_req > 0:
+            fraction = min(1.0, total_bytes_copied / total_req)
+        else:
+            fraction = 1.0
+            
+        def get_friendly_bytes(bytes_count):
+            size = bytes_count
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if size < 1024.0:
+                    return f"{size:.2f} {unit}"
+                size /= 1024.0
+            return f"{size:.2f} GB"
+            
+        percent = int(fraction * 100)
+        curr_str = get_friendly_bytes(total_bytes_copied)
+        req_str = get_friendly_bytes(total_req)
+        
+        # Strip deep directories for readable progress path
+        filename = os.path.basename(file_path)
+        
+        # Apply GUI updates safely on main loop thread
+        app.after_idle(lambda: progress.set(fraction))
+        app.after_idle(lambda: percent_lbl.configure(text=f"{percent}% completed ({curr_str} / {req_str})"))
+        app.after_idle(lambda: detail_lbl.configure(text=f"Copying file: ...\\{filename}"))
+
+    # Connect progress callback
+    engine.progress_callback = progress_callback
+    
+    def worker():
+        drive = app.selected_drive
+        drive_letter = drive['letter']
+        
+        # Step 1: Format drive
+        app.after_idle(lambda: op_title.configure(text="Formatting Drive..."))
+        app.after_idle(lambda: detail_lbl.configure(text="Performing quick format to NTFS..."))
+        
+        success = drive_ops.format_drive(drive_letter, label="PCM_MOVE")
+        if not success:
+            app.after_idle(lambda: show_error_screen(app, "Formatting Failed", "We were unable to format the external USB drive.\nPlease ensure it is plugged in, writable, and not locked by another process."))
+            return
+            
+        if engine.cancelled:
+            app.after_idle(lambda: show_export_welcome_screen(app))
+            return
+            
+        # Step 2: Copy Files
+        app.after_idle(lambda: op_title.configure(text="Exporting Files..."))
+        
+        # Target PCM folders on USB
+        pcm_root = os.path.join(drive_letter + "\\", "_pcm_data")
+        os.makedirs(pcm_root, exist_ok=True)
+        
+        user_folder_details = []
+        folder_sizes_manifest = {}
+        
+        for folder_name in app.selected_folders:
+            if engine.cancelled:
+                break
+                
+            info = app.folders_info.get(folder_name)
+            if info and info.exists:
+                app.after_idle(lambda f=folder_name: detail_lbl.configure(text=f"Copying folder: {f}..."))
+                dest_dir = os.path.join(pcm_root, folder_name)
+                engine.copy_folder_recursive(info.path, dest_dir)
+                folder_sizes_manifest[folder_name] = info.size_bytes
+                
+        if engine.cancelled:
+            app.after_idle(lambda: show_export_welcome_screen(app))
+            return
+            
+        # Step 3: Export Bookmarks
+        app.after_idle(lambda: op_title.configure(text="Exporting Browser Bookmarks..."))
+        app.after_idle(lambda: detail_lbl.configure(text="Detecting and extracting bookmarks..."))
+        
+        bookmarks_dest = os.path.join(pcm_root, "_pcm_bookmarks")
+        exported_browsers = bookmarks.export_browser_bookmarks(app.selected_profile.path, bookmarks_dest)
+        
+        # Step 4: Write Manifest
+        app.after_idle(lambda: op_title.configure(text="Writing Manifest..."))
+        app.after_idle(lambda: detail_lbl.configure(text="Generating configuration file..."))
+        
+        user_manifest = {
+            "username": app.selected_profile.username,
+            "folders": app.selected_folders,
+            "folder_sizes": folder_sizes_manifest,
+            "browsers": exported_browsers
+        }
+        
+        manifest.create_manifest(
+            drive_path=drive_letter + "\\",
+            source_machine=os.environ.get('COMPUTERNAME', 'SOURCE-PC'),
+            source_users=[user_manifest],
+            total_size_bytes=engine.total_bytes_copied
+        )
+        
+        # Step 5: Copy self to drive root
+        app.after_idle(lambda: op_title.configure(text="Copying Launcher..."))
+        app.after_idle(lambda: detail_lbl.configure(text="Copying PCM application to drive root for easy new PC launch..."))
+        drive_ops.self_copy_to_drive(drive_letter)
+        
+        # Step 6: Generate Log
+        engine.write_log_files(desktop_user_path=app.selected_profile.path, drive_root_path=drive_letter + "\\")
+        
+        # Step 7: Eject Drive
+        app.after_idle(lambda: op_title.configure(text="Ejecting Drive..."))
+        app.after_idle(lambda: detail_lbl.configure(text="Safely dismounting drive..."))
+        ejected = drive_ops.eject_drive(drive_letter)
+        
+        # End State
+        app.after_idle(lambda: show_complete_screen(app, engine.total_files_copied, engine.total_bytes_copied, ejected))
+        
+    threading.Thread(target=worker, daemon=True).start()
+
+def show_complete_screen(app, total_files, total_bytes, ejected):
+    app.set_title_subtitle("Export", "Success")
+    app.clear_container()
+    
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Complete", subtitle="Everything is ready!")
+    header.pack(fill="x")
+    
+    card = PremiumCard(app.container)
+    card.pack(fill="both", expand=True, pady=(0, 15))
+    
+    success_badge = ctk.CTkLabel(card, text="✓", font=("Segoe UI", 60, "bold"), text_color=SUCCESS_GREEN)
+    success_badge.pack(pady=(30, 5))
+    
+    title_lbl = ctk.CTkLabel(card, text="Your PCM Drive is Ready!", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    title_lbl.pack(pady=5)
+    
+    def get_friendly_bytes(bytes_count):
+        size = bytes_count
+        for unit in ['B', 'KB', 'MB', 'GB']:
+            if size < 1024.0:
+                return f"{size:.2f} {unit}"
+            size /= 1024.0
+        return f"{size:.2f} GB"
+        
+    size_str = get_friendly_bytes(total_bytes)
+    
+    status_str = "USB drive was successfully ejected." if ejected else "Failed to auto-eject. Please click 'Safely Remove Hardware' in Windows taskbar."
+    text_color = SUCCESS_GREEN if ejected else WARNING_YELLOW
+    
+    info_lbl = ctk.CTkLabel(
+        card, 
+        text=f"Total Files Copied: {total_files}\n"
+             f"Total Data Transferred: {size_str}\n\n"
+             f"Status: {status_str}\n\n"
+             "Next Steps:\n"
+             "1. Safely remove this USB drive from your old computer.\n"
+             "2. Plug it into your new computer.\n"
+             "3. Open the USB drive folder and double click 'PCM.exe' or launcher to start restoration.",
+        font=AppFonts.BODY,
+        text_color=TEXT_PRIMARY,
+        justify="center"
+    )
+    info_lbl.pack(pady=15, padx=20)
+    
+    btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+    btn_frame.pack(side="bottom", pady=25)
+    
+    def open_log():
+        # Open desktop log
+        desktop = os.path.join(app.selected_profile.path, 'Desktop')
+        log_file = os.path.join(desktop, "PCM_Migration_Log.txt")
+        if os.path.exists(log_file):
+            os.startfile(log_file)
+            
+    log_btn = ctk.CTkButton(
+        btn_frame, 
+        text="Open Log Report", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=BORDER_COLOR, 
+        hover_color=ACCENT_BLUE,
+        command=open_log,
+        width=150
+    )
+    log_btn.pack(side="left", padx=10)
+    
+    exit_btn = ctk.CTkButton(
+        btn_frame, 
+        text="Close App", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        command=app.quit,
+        width=120
+    )
+    exit_btn.pack(side="right", padx=10)
+
+def show_error_screen(app, title, message):
+    app.set_title_subtitle("Export", "Error")
+    app.clear_container()
+    
+    header = HeaderPanel(app.container, title="PCM (PC Mover) — Error", subtitle="Something went wrong")
+    header.pack(fill="x")
+    
+    card = PremiumCard(app.container)
+    card.pack(fill="both", expand=True, pady=(0, 15))
+    
+    err_icon = ctk.CTkLabel(card, text="❌", font=("Segoe UI", 48, "normal"), text_color=DANGER_RED)
+    err_icon.pack(pady=(45, 10))
+    
+    title_lbl = ctk.CTkLabel(card, text=title, font=AppFonts.HEADING_MEDIUM, text_color=DANGER_RED)
+    title_lbl.pack(pady=5)
+    
+    msg_lbl = ctk.CTkLabel(card, text=message, font=AppFonts.BODY, text_color=TEXT_PRIMARY, justify="center")
+    msg_lbl.pack(pady=20, padx=25)
+    
+    btn = ctk.CTkButton(
+        card, 
+        text="Back to Welcome", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        command=lambda: show_export_welcome_screen(app),
+        width=180
+    )
+    btn.pack(side="bottom", pady=40)
