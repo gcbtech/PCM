@@ -46,8 +46,7 @@ def list_removable_drives():
             return drives
             
         # Parse the raw unicode buffer separated by nulls
-        raw_bytes = buffer.raw[:length * 2]
-        drive_strings = raw_bytes.decode('utf-16le').split('\x00')
+        drive_strings = buffer[:length].split('\x00')
         drive_letters = [d.strip() for d in drive_strings if d.strip()]
         
         for drive_path in drive_letters:

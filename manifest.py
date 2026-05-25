@@ -3,7 +3,7 @@ import json
 import time
 
 MANIFEST_FILENAME = "manifest.json"
-CURRENT_VERSION = "1.0.0"
+CURRENT_VERSION = "1.2"
 
 def create_manifest(drive_path, source_machine, source_users, total_size_bytes):
     """
