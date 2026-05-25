@@ -27,7 +27,7 @@ def show_method_selection(app):
     app.clear_container()
 
     # Title header
-    header = HeaderPanel(app.container, title="PCM (PC Mover) V1.0", subtitle="Choose a file migration method to begin.")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) V1.1", subtitle="Choose a file migration method to begin.")
     header.pack(fill="x", pady=(0, 20))
 
     # Create a grid container frame that is packed inside app.container
@@ -592,7 +592,7 @@ def show_network_sender_connection(app):
     instruction_lbl.pack(pady=(20, 10))
 
     entry_frame = ctk.CTkFrame(card, fg_color="transparent")
-    entry_frame.pack(pady=15)
+    entry_frame.pack(pady=10)
 
     code_lbl = ctk.CTkLabel(entry_frame, text="Pairing Code:", font=AppFonts.BODY_BOLD, text_color=TEXT_PRIMARY)
     code_lbl.pack(side="left", padx=10)
@@ -607,15 +607,31 @@ def show_network_sender_connection(app):
     )
     code_entry.pack(side="left", padx=10)
 
+    # Optional IP Entry Box for virtualization / blocked UDP networks
+    ip_frame = ctk.CTkFrame(card, fg_color="transparent")
+    ip_frame.pack(pady=10)
+
+    ip_lbl = ctk.CTkLabel(ip_frame, text="Receiver IP (Optional):", font=AppFonts.BODY_BOLD, text_color=TEXT_PRIMARY)
+    ip_lbl.pack(side="left", padx=10)
+
+    ip_entry = ctk.CTkEntry(
+        ip_frame, 
+        placeholder_text="e.g. 172.20.15.42 (Auto-detects)", 
+        width=250, 
+        font=AppFonts.BODY,
+        border_color=BORDER_COLOR
+    )
+    ip_entry.pack(side="left", padx=10)
+
     action_btn = ctk.CTkButton(
         card, 
         text="Connect & Stream Files", 
         font=AppFonts.BODY_BOLD, 
         fg_color=SUCCESS_GREEN,
         hover_color="#2E8E00",
-        command=lambda: initiate_network_sender(app, code_entry.get())
+        command=lambda: initiate_network_sender(app, code_entry.get(), ip_entry.get())
     )
-    action_btn.pack(pady=20)
+    action_btn.pack(pady=15)
 
     back_btn = ctk.CTkButton(
         card, 
@@ -628,7 +644,7 @@ def show_network_sender_connection(app):
     )
     back_btn.pack(pady=5)
 
-def initiate_network_sender(app, code):
+def initiate_network_sender(app, code, receiver_ip=None):
     """Validates parameters, scans local files, and launches the sender thread."""
     clean_code = code.strip().replace(" ", "").replace("-", "")
     if len(clean_code) != 6 or not clean_code.isdigit():
@@ -729,7 +745,8 @@ def initiate_network_sender(app, code):
             files_to_send, 
             progress_callback, 
             completion_callback, 
-            error_callback
+            error_callback,
+            receiver_ip=receiver_ip
         )
         
         current_sender.run()

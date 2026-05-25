@@ -522,12 +522,13 @@ class PCMNetworkReceiver:
             self.stop()
 
 class PCMNetworkSender:
-    def __init__(self, pairing_code, files_to_send, progress_cb, completion_cb, error_cb):
+    def __init__(self, pairing_code, files_to_send, progress_cb, completion_cb, error_cb, receiver_ip=None):
         self.pairing_code = str(pairing_code).strip()
         self.files_to_send = files_to_send # list of dicts: {'src_path': '...', 'rel_path': '...', 'size': 123, 'category': '...'}
         self.progress_cb = progress_cb
         self.completion_cb = completion_cb
         self.error_cb = error_cb
+        self.receiver_ip = str(receiver_ip).strip() if receiver_ip else None
         
         self.ssl_sock = None
         self.cancelled = False
@@ -543,42 +544,43 @@ class PCMNetworkSender:
     def run(self):
         """Executes the Sender client loop. Should be run in a background thread."""
         try:
-            # 1. Listen for UDP beacon to auto-discover Destination IP
-            print("[Network] Starting UDP auto-discovery...")
-            receiver_ip = None
-            
-            udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            try:
-                udp_sock.bind(("", PORT_UDP))
-            except Exception:
-                # Fallback if binding fails
-                pass
-            udp_sock.settimeout(6.0)
-
-            start_time = time.time()
-            while time.time() - start_time < 6.0:
-                if self.cancelled:
-                    udp_sock.close()
-                    return
-                try:
-                    data, addr = udp_sock.recvfrom(1024)
-                    if data.startswith(b"PCM_BEACON:58291"):
-                        receiver_ip = addr[0]
-                        print(f"[Network] Auto-discovered Receiver at: {receiver_ip}")
-                        break
-                except socket.timeout:
-                    break
-                except Exception as e:
-                    print(f"[Network] Discovery socket exception: {e}")
-                    time.sleep(0.5)
-
-            udp_sock.close()
-
-            # Fallback if discovery fails (check localhost)
+            # 1. Obtain IP (either manual override or auto-discover)
+            receiver_ip = self.receiver_ip
             if not receiver_ip:
-                print("[Network] Auto-discovery timed out. Attempting fallback to localhost...")
-                receiver_ip = "127.0.0.1"
+                print("[Network] Starting UDP auto-discovery...")
+                
+                udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                udp_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    udp_sock.bind(("", PORT_UDP))
+                except Exception:
+                    # Fallback if binding fails
+                    pass
+                udp_sock.settimeout(6.0)
+
+                start_time = time.time()
+                while time.time() - start_time < 6.0:
+                    if self.cancelled:
+                        udp_sock.close()
+                        return
+                    try:
+                        data, addr = udp_sock.recvfrom(1024)
+                        if data.startswith(b"PCM_BEACON:58291"):
+                            receiver_ip = addr[0]
+                            print(f"[Network] Auto-discovered Receiver at: {receiver_ip}")
+                            break
+                    except socket.timeout:
+                        break
+                    except Exception as e:
+                        print(f"[Network] Discovery socket exception: {e}")
+                        time.sleep(0.5)
+
+                udp_sock.close()
+
+                # Fallback if discovery fails (check localhost)
+                if not receiver_ip:
+                    print("[Network] Auto-discovery timed out. Attempting fallback to localhost...")
+                    receiver_ip = "127.0.0.1"
 
             # 2. Connect to Receiver
             print(f"[Network] Connecting to {receiver_ip}:{PORT_TCP}...")

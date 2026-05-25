@@ -10,7 +10,7 @@ class PCMApp(ctk.CTk):
         super().__init__()
         
         # Window configuration
-        self.title("PCM (PC Mover) V1.0")
+        self.title("PCM (PC Mover) V1.1")
         self.geometry("780x640")
         self.minsize(700, 580)
         self.configure(fg_color=BG_COLOR)
@@ -77,7 +77,7 @@ class PCMApp(ctk.CTk):
 
     def set_title_subtitle(self, title, subtitle):
         """Sets the application title bar description dynamically."""
-        self.title(f"PCM (PC Mover) V1.0 - {title}")
+        self.title(f"PCM (PC Mover) V1.1 - {title}")
 
     def switch_to_export_mode(self):
         """Force switch to export mode via manual override."""

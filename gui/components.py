@@ -39,7 +39,7 @@ class PremiumCard(ctk.CTkFrame):
 
 class HeaderPanel(ctk.CTkFrame):
     """Standard header banner displayed across all screens."""
-    def __init__(self, master, title="PCM (PC Mover) V1.0", subtitle="File Migration Utility", **kwargs):
+    def __init__(self, master, title="PCM (PC Mover) V1.1", subtitle="File Migration Utility", **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
         
         # Grid layout
