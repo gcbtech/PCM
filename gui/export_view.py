@@ -569,6 +569,17 @@ def show_scan_results_screen(app):
         app.selected_games = steam_checklist.get_selected_games()
         show_format_warning_screen(app)
 
+    back_btn = ctk.CTkButton(
+        drive_card,
+        text="← Back to Welcome",
+        font=AppFonts.BODY_BOLD,
+        fg_color=BORDER_COLOR,
+        hover_color=ACCENT_BLUE,
+        command=lambda: show_export_welcome_screen(app),
+        height=35
+    )
+    back_btn.pack(side="bottom", fill="x", pady=(0, 20), padx=20)
+    
     start_btn = ctk.CTkButton(
         drive_card, 
         text="Start Migration", 
@@ -578,7 +589,7 @@ def show_scan_results_screen(app):
         command=proceed_to_confirm,
         height=40
     )
-    start_btn.pack(side="bottom", fill="x", pady=25, padx=20)
+    start_btn.pack(side="bottom", fill="x", pady=(20, 10), padx=20)
     
     # Render the initial custom items list
     refresh_custom_items_list()

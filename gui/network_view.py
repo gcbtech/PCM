@@ -358,16 +358,38 @@ def show_network_receiver_target_selection(app, manifest_data, target_selected_e
     keep_radio = ctk.CTkRadioButton(conflict_frame, text="Keep both (rename incoming files)", variable=conflict_var, value="keep_both", font=AppFonts.SMALL)
     keep_radio.pack(anchor="w", padx=25, pady=2)
 
-    # Action button
+    # Action buttons frame
+    btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+    btn_frame.pack(pady=20)
+    
+    def cancel_click():
+        global current_receiver
+        if current_receiver:
+            current_receiver.stop()
+            current_receiver = None
+        show_network_role_selection(app)
+
+    cancel_btn = ctk.CTkButton(
+        btn_frame, 
+        text="Cancel & Disconnect", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=BORDER_COLOR,
+        hover_color=DANGER_RED,
+        command=cancel_click,
+        width=160
+    )
+    cancel_btn.pack(side="left", padx=10)
+
     action_btn = ctk.CTkButton(
-        card, 
+        btn_frame, 
         text="Start Importing Network Data", 
         font=AppFonts.BODY_BOLD, 
         fg_color=SUCCESS_GREEN,
         hover_color="#2E8E00",
-        command=lambda: submit_receiver_selections(app, target_selected_event, profile_map, selected_username_var.get(), conflict_var.get(), manifest_data)
+        command=lambda: submit_receiver_selections(app, target_selected_event, profile_map, selected_username_var.get(), conflict_var.get(), manifest_data),
+        width=220
     )
-    action_btn.pack(pady=20)
+    action_btn.pack(side="right", padx=10)
 
 def submit_receiver_selections(app, target_selected_event, profile_map, selected_username, conflict_pref, manifest_data):
     """Submits selections back to the engine thread to begin transfers."""
@@ -760,15 +782,27 @@ def show_network_sender_checklist(app):
         app.selected_games = steam_checklist.get_selected_games()
         show_network_sender_connection(app)
 
+    back_btn = ctk.CTkButton(
+        summary_card,
+        text="← Back to Profile Select",
+        font=AppFonts.BODY_BOLD,
+        fg_color=BORDER_COLOR,
+        hover_color=ACCENT_BLUE,
+        command=lambda: show_network_sender_user_select(app),
+        height=35
+    )
+    back_btn.pack(side="bottom", fill="x", pady=(0, 20), padx=20)
+
     next_btn = ctk.CTkButton(
         summary_card, 
         text="Proceed to Connection", 
         font=AppFonts.BODY_BOLD, 
         fg_color=ACCENT_BLUE,
         hover_color="#2563EB",
-        command=proceed
+        command=proceed,
+        height=40
     )
-    next_btn.pack(side="bottom", pady=25)
+    next_btn.pack(side="bottom", fill="x", pady=(20, 10), padx=20)
 
 
 def show_network_sender_connection(app):
@@ -1178,15 +1212,30 @@ def show_network_completion(app, summary):
     summary_lbl = ctk.CTkLabel(card, text=summary, font=AppFonts.BODY, text_color=TEXT_SECONDARY, wraplength=550)
     summary_lbl.pack(pady=15, padx=20)
 
+    btn_frame = ctk.CTkFrame(card, fg_color="transparent")
+    btn_frame.pack(pady=20)
+
+    back_btn = ctk.CTkButton(
+        btn_frame, 
+        text="Back to Welcome", 
+        font=AppFonts.BODY_BOLD, 
+        fg_color=BORDER_COLOR,
+        hover_color=ACCENT_BLUE,
+        command=lambda: show_method_selection(app),
+        width=160
+    )
+    back_btn.pack(side="left", padx=10)
+
     action_btn = ctk.CTkButton(
-        card, 
+        btn_frame, 
         text="Close Application", 
         font=AppFonts.BODY_BOLD, 
         fg_color=ACCENT_BLUE,
         hover_color="#2563EB",
-        command=app.destroy
+        command=app.destroy,
+        width=160
     )
-    action_btn.pack(pady=20)
+    action_btn.pack(side="right", padx=10)
 
 def show_network_error(app, error_msg):
     """Unified error screen showing socket / handshake failures."""
