@@ -1,180 +1,310 @@
 import os
 import sys
 import subprocess
-import psutil
 import shutil
 
-# Windows Drive Type constants
-DRIVE_UNKNOWN = 0
-DRIVE_NO_ROOT_DIR = 1
-DRIVE_REMOVABLE = 2
-DRIVE_FIXED = 3
-DRIVE_REMOTE = 4
-DRIVE_CDROM = 5
-DRIVE_RAMDISK = 6
 
-def get_drive_type(drive_path):
-    """Returns the Windows drive type for a given drive path (e.g. 'E:\\')."""
-    if sys.platform == 'win32':
+def _get_system_disk_index():
+    """Returns the physical disk index that contains the system drive (usually C:\\)."""
+    try:
+        system_drive = os.environ.get('SystemDrive', 'C:').upper()
+        if not system_drive.endswith('\\'):
+            system_drive += '\\'
+        # Use PowerShell to query which disk holds the system partition
+        ps_cmd = (
+            f"Get-Partition -DriveLetter '{system_drive[0]}' "
+            "| Select-Object -ExpandProperty DiskNumber"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip().isdigit():
+            return int(result.stdout.strip())
+    except Exception as e:
+        print(f"[drive_ops] Could not determine system disk index: {e}")
+    return 0  # Fallback: assume disk 0 is the system disk
+
+
+def _query_partition_info(disk_index):
+    """
+    Returns a list of partition dicts for the given physical disk index.
+    Each dict: {'letter': 'E:', 'label': str, 'free_bytes': int, 'total_bytes': int, 'fstype': str}
+    Uses Win32 API calls (non-blocking) to read volume info for each partition letter.
+    """
+    partitions = []
+    try:
         import ctypes
-        return ctypes.windll.kernel32.GetDriveTypeW(drive_path)
-    return DRIVE_REMOVABLE  # Fallback for dev
+        # Ask PowerShell for drive letters on this disk
+        ps_cmd = (
+            f"Get-Partition -DiskNumber {disk_index} "
+            "| Where-Object { $_.DriveLetter } "
+            "| Select-Object -ExpandProperty DriveLetter"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode != 0:
+            return partitions
+
+        letters = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+        for letter_char in letters:
+            drive_letter = f"{letter_char.upper()}:"
+            drive_path = drive_letter + "\\"
+
+            # Query free space via kernel32 (non-blocking)
+            freeBytes = ctypes.c_ulonglong(0)
+            totalBytes = ctypes.c_ulonglong(0)
+            totalFreeBytes = ctypes.c_ulonglong(0)
+            success_space = ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+                ctypes.c_wchar_p(drive_path),
+                ctypes.byref(freeBytes),
+                ctypes.byref(totalBytes),
+                ctypes.byref(totalFreeBytes)
+            )
+            if not success_space:
+                continue
+
+            # Get volume label and filesystem type
+            volumeNameBuffer = ctypes.create_unicode_buffer(1024)
+            fileSystemNameBuffer = ctypes.create_unicode_buffer(1024)
+            success_vol = ctypes.windll.kernel32.GetVolumeInformationW(
+                ctypes.c_wchar_p(drive_path),
+                volumeNameBuffer, 1024,
+                None, None, None,
+                fileSystemNameBuffer, 1024
+            )
+            label = volumeNameBuffer.value if success_vol else ""
+            fs_type = fileSystemNameBuffer.value if success_vol else ""
+
+            partitions.append({
+                'letter': drive_letter,
+                'label': label,
+                'free_bytes': freeBytes.value,
+                'total_bytes': totalBytes.value,
+                'fstype': fs_type
+            })
+    except Exception as e:
+        print(f"[drive_ops] Error querying partitions for disk {disk_index}: {e}")
+    return partitions
+
 
 def list_removable_drives():
     """
-    Lists all external / removable drives suitable for transport.
-    Uses pure Win32 API calls via ctypes instead of psutil to prevent 
-    system hangs on empty card readers or disconnected network mapped drives.
+    Lists all external / removable physical drives suitable for transport.
+    Enumerates whole physical disks via WMI (Win32_DiskDrive) so that:
+      - Multi-partition drives appear as a single entry (the whole device)
+      - Unpartitioned / raw drives are also visible
+    Returns a list of dicts, one per physical disk.
     """
     drives = []
     if sys.platform != 'win32':
         return drives
-        
+
     try:
-        import ctypes
-        
-        # Get system drive to exclude it (usually C:\)
-        system_drive = os.environ.get('SystemDrive', 'C:').upper()
-        if not system_drive.endswith('\\'):
-            system_drive += '\\'
-            
-        # GetLogicalDriveStringsW returns all drive letters separated by null bytes, e.g. "C:\x00D:\x00E:\x00\x00"
-        buffer = ctypes.create_unicode_buffer(1024)
-        length = ctypes.windll.kernel32.GetLogicalDriveStringsW(1024, buffer)
-        
-        if length == 0:
+        system_disk_idx = _get_system_disk_index()
+
+        # Use PowerShell + Get-Disk for reliable USB/external detection.
+        # Get-Disk exposes BusType (USB, SATA, NVMe, etc.) directly.
+        ps_cmd = (
+            "Get-Disk | Where-Object { $_.BusType -eq 'USB' } "
+            "| Select-Object Number, FriendlyName, Size, MediaType "
+            "| ConvertTo-Json -Compress"
+        )
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=15
+        )
+
+        if result.returncode != 0 or not result.stdout.strip():
+            print(f"[drive_ops] Get-Disk query returned no results or failed.")
             return drives
-            
-        # Parse the raw unicode buffer separated by nulls
-        drive_strings = buffer[:length].split('\x00')
-        drive_letters = [d.strip() for d in drive_strings if d.strip()]
-        
-        for drive_path in drive_letters:
-            drive_letter = drive_path.rstrip('\\')
-            
-            # Skip system drive
-            if drive_path.upper() == system_drive.upper():
+
+        import json
+        raw = json.loads(result.stdout.strip())
+        # PowerShell returns a single object (not array) when there's only one result
+        if isinstance(raw, dict):
+            raw = [raw]
+
+        for disk in raw:
+            disk_index = disk.get("Number")
+            if disk_index is None:
                 continue
-                
-            # Skip traditional floppy disk drives (A: and B:) to avoid slow hardware seeks
-            if drive_letter.upper() in ['A:', 'B:']:
+
+            # Skip the system disk
+            if disk_index == system_disk_idx:
                 continue
-                
-            drive_type = ctypes.windll.kernel32.GetDriveTypeW(drive_path)
-            
-            # Focus on DRIVE_REMOVABLE (USB flash drives) and DRIVE_FIXED (USB external HDDs)
-            if drive_type in [DRIVE_REMOVABLE, DRIVE_FIXED]:
-                try:
-                    # Query Disk Free Space directly using GetDiskFreeSpaceExW (non-blocking kernel call)
-                    freeBytes = ctypes.c_ulonglong(0)
-                    totalBytes = ctypes.c_ulonglong(0)
-                    totalFreeBytes = ctypes.c_ulonglong(0)
-                    
-                    success_space = ctypes.windll.kernel32.GetDiskFreeSpaceExW(
-                        ctypes.c_wchar_p(drive_path),
-                        ctypes.byref(freeBytes),
-                        ctypes.byref(totalBytes),
-                        ctypes.byref(totalFreeBytes)
-                    )
-                    
-                    if not success_space:
-                        # If we can't query size (like an uninserted card reader), skip it immediately without blocking
-                        continue
-                        
-                    # Fetch volume label and filesystem name
-                    volumeNameBuffer = ctypes.create_unicode_buffer(1024)
-                    fileSystemNameBuffer = ctypes.create_unicode_buffer(1024)
-                    success_vol = ctypes.windll.kernel32.GetVolumeInformationW(
-                        ctypes.c_wchar_p(drive_path),
-                        volumeNameBuffer,
-                        1024,
-                        None,
-                        None,
-                        None,
-                        fileSystemNameBuffer,
-                        1024
-                    )
-                    
-                    label = volumeNameBuffer.value if success_vol else ""
-                    fs_type = fileSystemNameBuffer.value if success_vol else "NTFS"
-                    
-                    type_desc = "USB Flash Drive" if drive_type == DRIVE_REMOVABLE else "External Hard Drive"
-                    
-                    drives.append({
-                        'letter': drive_letter,
-                        'label': label or "Local Disk",
-                        'total_bytes': totalBytes.value,
-                        'free_bytes': freeBytes.value,
-                        'fstype': fs_type,
-                        'type_desc': type_desc
-                    })
-                except Exception:
-                    # Skip empty/locked drives
-                    continue
+
+            friendly_name = disk.get("FriendlyName", "External Disk").strip()
+            total_bytes = int(disk.get("Size", 0))
+            media_type = str(disk.get("MediaType", "")).strip()
+
+            # Determine human-friendly type description
+            # MediaType from Get-Disk: 0 = Unspecified, 3 = HDD, 4 = SSD, 5 = SCM
+            # For USB bus, "Removable" typically means flash drive; fixed means external HDD/SSD
+            if media_type in ("4", "SSD"):
+                type_desc = "External SSD"
+            elif media_type in ("3", "HDD"):
+                type_desc = "External Hard Drive"
+            else:
+                # Heuristic: small USB disks (<256GB) are likely flash drives
+                if total_bytes < 256 * (1024 ** 3):
+                    type_desc = "USB Flash Drive"
+                else:
+                    type_desc = "External Hard Drive"
+
+            # Query existing partitions on this disk
+            parts = _query_partition_info(disk_index)
+            letters = [p['letter'] for p in parts]
+
+            # Aggregate: label from first partition, or "Unallocated"
+            if parts:
+                label = parts[0]['label'] or friendly_name
+                free_bytes = sum(p['free_bytes'] for p in parts)
+            else:
+                label = friendly_name
+                free_bytes = 0
+
+            drives.append({
+                'disk_index': disk_index,
+                'letter': letters[0] if letters else "",
+                'letters': letters,
+                'label': label or "External Disk",
+                'total_bytes': total_bytes,
+                'free_bytes': free_bytes,
+                'type_desc': type_desc,
+                'partitions': parts,
+            })
+
     except Exception as e:
         print(f"Error listing removable drives: {e}")
-        
+
     return drives
 
-def format_drive(drive_letter, label="PCM"):
+def format_drive(disk_index, label="PCM", drive_letter=None):
+    r"""
+    Formats an entire physical disk using diskpart.
+    Cleans the disk, creates a single primary NTFS partition, and assigns a drive letter.
+
+    Args:
+        disk_index: Physical disk number (e.g. 1 for \\.\PhysicalDrive1)
+        label: Volume label for the new partition (default "PCM")
+        drive_letter: Optional safety check — if provided, refuses to proceed if it
+                      resolves to the system drive. Not used for the actual format.
+
+    Returns:
+        The newly assigned drive letter string (e.g. "E:") on success, or False on failure.
+
+    Requires administrator privileges because diskpart needs elevation.
     """
-    Performs a quick format of the specified drive to NTFS.
-    Requires administrative permissions or elevation in some Windows environments, 
-    but for standard USB drives, standard user can format them.
-    Command: format E: /fs:ntfs /v:PCM /q /x
-    We pass 'Y\n' to handle any prompt.
-    """
-    drive_letter = drive_letter.strip().upper()
-    if not drive_letter.endswith(':'):
-        drive_letter = drive_letter + ':'
-        
-    system_drive = os.environ.get('SystemDrive', 'C:').upper()
-    if drive_letter == system_drive:
-        raise ValueError("Cannot format the system drive!")
-        
     if sys.platform != 'win32':
-        print(f"[Mock Format] Formatted {drive_letter} to NTFS with label {label}")
-        return True
-        
+        print(f"[Mock Format] Formatted disk {disk_index} to NTFS with label {label}")
+        return "Z:"  # Mock letter
+
+    # Safety: refuse to format the system disk
+    system_disk_idx = _get_system_disk_index()
+    if disk_index == system_disk_idx:
+        raise ValueError(f"Cannot format the system disk (Disk {disk_index})!")
+
+    if drive_letter:
+        dl = drive_letter.strip().upper()
+        system_drive = os.environ.get('SystemDrive', 'C:').upper()
+        if dl.rstrip(':') == system_drive.rstrip(':'):
+            raise ValueError("Cannot format the system drive!")
+
     try:
         import re
-        # Sanitize label: strip any characters that could cause shell issues (not needed for
-        # list-based Popen, but good hygiene — NTFS max label length is 32 chars)
+
+        # Sanitize label
         label = re.sub(r'[^\w\-]', '_', label)[:32]
 
-        # Use the full path to format.com and list-form Popen (no shell=True injection risk)
-        system32 = os.path.join(os.environ.get('SystemRoot', r'C:\Windows'), 'System32')
-        format_exe = os.path.join(system32, 'format.com')
-        if not os.path.exists(format_exe):
-            format_exe = 'format'  # Fallback to PATH resolution
+        # Build diskpart script
+        #   select disk N  — target the physical disk
+        #   clean           — wipe partition table
+        #   create partition primary — single partition using all space
+        #   format fs=ntfs quick label=XXX — quick NTFS format
+        #   assign          — auto-assign the next available drive letter
+        script_lines = [
+            f"select disk {disk_index}",
+            "clean",
+            "create partition primary",
+            f"format fs=ntfs quick label={label}",
+            "assign",
+        ]
+        script_content = "\n".join(script_lines) + "\n"
 
-        # /q: Quick Format  /fs:ntfs: NTFS  /v:Label: Volume Label  /x: Force Dismount
-        cmd = [format_exe, drive_letter, '/fs:ntfs', f'/v:{label}', '/q', '/x']
-        print(f"Executing: {' '.join(cmd)}")
+        # Write script to a temp file (diskpart requires a file input)
+        # Use the project working directory area to stay within workspace
+        script_dir = os.path.join(os.environ.get('TEMP', os.getcwd()), 'pcm_diskpart')
+        os.makedirs(script_dir, exist_ok=True)
+        script_path = os.path.join(script_dir, 'format_script.txt')
 
-        # Popen allows us to feed input to stdin
-        proc = subprocess.Popen(
-            cmd,
-            shell=False,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+
+        print(f"[drive_ops] Running diskpart with script:\n{script_content}")
+
+        # Execute diskpart
+        proc = subprocess.run(
+            ["diskpart", "/s", script_path],
+            capture_output=True, text=True, timeout=120
         )
-        
-        # Windows format command asks "Press ENTER when ready..." and then "Format another? (Y/N)"
-        # We write Enter (\n) then N (\n)
-        stdout, stderr = proc.communicate(input="\nN\n")
-        
-        if proc.returncode == 0:
-            print("Drive formatted successfully.")
-            return True
-        else:
-            print(f"Format failed (code {proc.returncode}). Stderr: {stderr}")
-            # Try formatting without dismount if /x failed, or run via powershell
+
+        # Clean up script file
+        try:
+            os.remove(script_path)
+        except Exception:
+            pass
+
+        print(f"[drive_ops] diskpart stdout:\n{proc.stdout}")
+        if proc.stderr:
+            print(f"[drive_ops] diskpart stderr:\n{proc.stderr}")
+
+        if proc.returncode != 0:
+            print(f"[drive_ops] diskpart failed with return code {proc.returncode}")
             return False
+
+        # Check for errors in output (diskpart returns 0 even on some failures)
+        output_lower = proc.stdout.lower()
+        if "error" in output_lower or "cannot" in output_lower or "is not valid" in output_lower:
+            # Check if these are real failures vs benign mentions
+            if "diskpart succeeded" not in output_lower:
+                print("[drive_ops] diskpart output contains error indicators.")
+                return False
+
+        # Determine the newly assigned drive letter by re-querying partitions
+        parts = _query_partition_info(disk_index)
+        if parts:
+            new_letter = parts[0]['letter']
+            print(f"[drive_ops] Format complete. New drive letter: {new_letter}")
+            return new_letter
+        else:
+            # Fallback: try to find it via PowerShell
+            try:
+                ps_cmd = (
+                    f"Get-Partition -DiskNumber {disk_index} "
+                    "| Where-Object {{ $_.DriveLetter }} "
+                    "| Select-Object -First 1 -ExpandProperty DriveLetter"
+                )
+                ps_result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps_cmd],
+                    capture_output=True, text=True, timeout=10
+                )
+                if ps_result.returncode == 0 and ps_result.stdout.strip():
+                    new_letter = ps_result.stdout.strip().upper() + ":"
+                    print(f"[drive_ops] Format complete (PS fallback). New drive letter: {new_letter}")
+                    return new_letter
+            except Exception:
+                pass
+            print("[drive_ops] Format appeared to succeed but could not determine new drive letter.")
+            return False
+
+    except subprocess.TimeoutExpired:
+        print(f"[drive_ops] diskpart timed out formatting disk {disk_index}")
+        return False
     except Exception as e:
-        print(f"Exception formatting drive {drive_letter}: {e}")
+        print(f"[drive_ops] Exception formatting disk {disk_index}: {e}")
         return False
 
 def eject_drive(drive_letter):

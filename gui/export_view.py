@@ -515,16 +515,18 @@ def show_scan_results_screen(app):
     settings_checklist.on_toggle_callback = update_size_estimate
     appdata_checklist.on_toggle_callback = update_size_estimate
         
+    def _drive_display_name(d):
+        """Build a human-readable dropdown label for a physical disk."""
+        total_space = format_bytes(d['total_bytes'])
+        letters = d.get('letters', [])
+        letters_str = ", ".join(letters) if letters else "No Partitions"
+        return f"Disk {d['disk_index']} ({d['label']}) — {total_space} {d['type_desc']} [{letters_str}]"
+
     def scan_drives():
         nonlocal detected_drives
         detected_drives = drive_ops.list_removable_drives()
         
-        values = []
-        for d in detected_drives:
-            free_space = format_bytes(d['free_bytes'])
-            total_space = format_bytes(d['total_bytes'])
-            desc = f"{d['letter']} ({d['label']}) - {total_space} Total"
-            values.append(desc)
+        values = [_drive_display_name(d) for d in detected_drives]
             
         if not values:
             drive_letter_var.set("No drive detected (Preview Mode)")
@@ -551,9 +553,7 @@ def show_scan_results_screen(app):
 
     def on_drive_select(choice):
         for d in detected_drives:
-            total_space = format_bytes(d['total_bytes'])
-            desc = f"{d['letter']} ({d['label']}) - {total_space} Total"
-            if choice == desc:
+            if choice == _drive_display_name(d):
                 app.selected_drive = d
                 break
         check_drive_suitability()
@@ -672,7 +672,9 @@ def show_format_warning_screen(app):
     title_lbl.pack(pady=5)
     
     drive = app.selected_drive
-    desc_str = f"Drive: {drive['letter']}  |  Label: '{drive['label']}'  |  Type: {drive['type_desc']}"
+    letters = drive.get('letters', [])
+    letters_str = ", ".join(letters) if letters else "No Partitions"
+    desc_str = f"Disk {drive['disk_index']}  |  Label: '{drive['label']}'  |  Type: {drive['type_desc']}  |  Partitions: [{letters_str}]"
     
     info_lbl = ctk.CTkLabel(
         card, 
@@ -821,18 +823,24 @@ def show_progress_screen(app):
     
     def worker():
         drive = app.selected_drive
-        drive_letter = drive['letter']
+        disk_index = drive['disk_index']
         
-        # Step 1: Format drive
+        # Step 1: Format entire physical disk via diskpart
         app.after_idle(lambda: op_title.configure(text="Formatting Drive..."))
-        app.after_idle(lambda: detail_lbl.configure(text="Performing quick format to NTFS..."))
+        app.after_idle(lambda: detail_lbl.configure(text=f"Cleaning and formatting Disk {disk_index} to NTFS..."))
         
-        success = drive_ops.format_drive(drive_letter, label="PCM_MOVE")
-        if not success:
+        new_letter = drive_ops.format_drive(disk_index, label="PCM_MOVE", drive_letter=drive.get('letter'))
+        if not new_letter:
             app.after_idle(lambda: show_error_screen(app, "Formatting Failed",
                 "We were unable to format the external USB drive.\n"
-                "Please ensure it is plugged in, writable, and not locked by another process."))
+                "Please ensure it is plugged in, writable, and not locked by another process.\n\n"
+                "Note: PCM must be run as Administrator for USB disk formatting."))
             return
+        
+        # Update the drive letter to the newly assigned one
+        drive_letter = new_letter
+        drive['letter'] = new_letter
+        drive['letters'] = [new_letter]
             
         if engine.cancelled:
             app.after_idle(lambda: show_export_welcome_screen(app))

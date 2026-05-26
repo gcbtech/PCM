@@ -1,6 +1,6 @@
 # PCM (PC Mover) - Personal File Migration Utility
 
-PCM (PC Mover) is a standalone Windows GUI utility designed for computer refurbisher shops and end users to migrate personal files, personalization settings, and application preferences from an old computer to a new one.
+PCM (PC Mover) is a standalone Windows GUI utility designed for computer shops and end users to migrate personal files, personalization settings, and application preferences from an old computer to a new one.
 
 PCM focuses strictly on migrating personal data, leaving complex application reinstallations aside to ensure a predictable, clean transfer.
 

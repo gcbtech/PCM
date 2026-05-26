@@ -55,10 +55,10 @@ def show_import_welcome_screen(app):
     def on_drive_selected(choice):
         nonlocal running_dir, manifest_data
         for d in detected_drives:
-            desc = f"{d['letter']} ({d['label']}) - PCM Backup"
+            desc = f"{d.get('letter', '')} ({d['label']}) - PCM Backup"
             if choice == desc:
-                manifest_data = manifest.read_manifest(d['letter'] + "\\")
-                running_dir = d['letter'] + "\\"
+                manifest_data = d.get('_manifest') or manifest.read_manifest(d.get('_manifest_root', ''))
+                running_dir = d.get('_manifest_root', d.get('letter', '') + "\\")
                 break
         update_ui_with_manifest()
 
@@ -75,19 +75,37 @@ def show_import_welcome_screen(app):
         detected_drives = []
         
         for d in removables:
-            m = manifest.read_manifest(d['letter'] + "\\")
-            if m:
+            # Check all partition letters on this physical disk for a manifest
+            letters_to_check = d.get('letters', [])
+            if not letters_to_check and d.get('letter'):
+                letters_to_check = [d['letter']]
+            
+            found_manifest = None
+            found_root = None
+            for letter in letters_to_check:
+                if not letter:
+                    continue
+                root = letter + "\\"
+                m = manifest.read_manifest(root)
+                if m:
+                    found_manifest = m
+                    found_root = root
+                    break
+            
+            if found_manifest:
+                d['_manifest'] = found_manifest
+                d['_manifest_root'] = found_root
                 detected_drives.append(d)
                 
         if detected_drives:
             # Found PCM drive(s)
             dropdown_frame.pack(pady=10)
-            values = [f"{d['letter']} ({d['label']}) - PCM Backup" for d in detected_drives]
+            values = [f"{d.get('letter', '')} ({d['label']}) - PCM Backup" for d in detected_drives]
             selected_drive_var.set(values[0])
             
             # Select first one
-            manifest_data = manifest.read_manifest(detected_drives[0]['letter'] + "\\")
-            running_dir = detected_drives[0]['letter'] + "\\"
+            manifest_data = detected_drives[0]['_manifest']
+            running_dir = detected_drives[0]['_manifest_root']
             
             # Show drop down
             for widget in dropdown_frame.winfo_children():

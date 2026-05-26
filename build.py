@@ -11,12 +11,6 @@ def run_build():
     except ImportError:
         print("Error: customtkinter is not installed. Please run 'pip install -r requirements.txt' first.")
         sys.exit(1)
-        
-    try:
-        import psutil
-    except ImportError:
-        print("Error: psutil is not installed. Please run 'pip install -r requirements.txt' first.")
-        sys.exit(1)
 
     try:
         import cryptography
