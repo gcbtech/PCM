@@ -553,6 +553,51 @@ def show_import_progress_screen(app):
                 src_bookmarks = os.path.join(pcm_root, "_pcm_bookmarks")
             bookmarks.import_browser_bookmarks(src_bookmarks, dest_profile.path)
 
+        # Step 2.5: Restore Steam Games
+        steam_games = app.manifest_data.get("steam_games", [])
+        if steam_games and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Restoring Steam Games..."))
+            
+            # Detect local Steam path
+            import steam_ops
+            local_steam_path = steam_ops.get_steam_install_path()
+            primary_dest = app.user_mappings[0]['dest_profile'] if app.user_mappings else app.selected_profile
+            
+            if local_steam_path:
+                dest_steamapps = os.path.join(local_steam_path, "steamapps")
+                print(f"[Import] Restoring Steam games to local Steam library: {dest_steamapps}")
+            else:
+                # Fallback to desktop
+                desktop_path = os.path.join(primary_dest.path, 'Desktop')
+                dest_steamapps = os.path.join(desktop_path, "PCM Restored Steam Games", "steamapps")
+                print(f"[Import] Steam not detected. Restoring to Desktop fallback: {dest_steamapps}")
+                
+            os.makedirs(dest_steamapps, exist_ok=True)
+            os.makedirs(os.path.join(dest_steamapps, "common"), exist_ok=True)
+            
+            steam_data_root = os.path.join(pcm_root, "steam_games")
+            
+            for game in steam_games:
+                if engine.cancelled:
+                    break
+                appid = game['appid']
+                name = game['name']
+                installdir = game['installdir']
+                
+                app.after_idle(lambda g=name: detail_lbl.configure(text=f"Restoring game: {g}..."))
+                
+                # Copy manifest
+                src_acf = os.path.join(steam_data_root, f"appmanifest_{appid}.acf")
+                dest_acf = os.path.join(dest_steamapps, f"appmanifest_{appid}.acf")
+                if os.path.exists(src_acf):
+                    engine.copy_file_with_conflict_resolution(src_acf, dest_acf)
+                    
+                # Copy game files
+                src_common = os.path.join(steam_data_root, "common", installdir)
+                dest_common = os.path.join(dest_steamapps, "common", installdir)
+                if os.path.exists(src_common):
+                    engine.copy_folder_recursive(src_common, dest_common)
+
         # Step 3: Write logs
         primary_dest = app.user_mappings[0]['dest_profile'] if app.user_mappings else app.selected_profile
         engine.write_log_files(desktop_user_path=primary_dest.path, drive_root_path=app.transport_drive)

@@ -1,5 +1,6 @@
 import customtkinter as ctk
 import manifest
+from utils import format_bytes
 
 # Premium Visual Style Tokens
 BG_COLOR = "#121212"
@@ -79,6 +80,8 @@ class ScrollableFolderList(ctk.CTkScrollableFrame):
     Allows user to select which folders to export.
     """
     def __init__(self, master, folders_dict, **kwargs):
+        border_width = kwargs.pop('border_width', 1)
+        corner_radius = kwargs.pop('corner_radius', 12)
         super().__init__(
             master, 
             fg_color=CARD_COLOR, 
@@ -86,11 +89,40 @@ class ScrollableFolderList(ctk.CTkScrollableFrame):
             label_font=AppFonts.HEADING_MEDIUM,
             label_text_color=TEXT_PRIMARY,
             border_color=BORDER_COLOR,
-            border_width=1,
-            corner_radius=12,
+            border_width=border_width,
+            corner_radius=corner_radius,
             **kwargs
         )
         self.checkboxes = {}
+        self.on_toggle_callback = None
+        
+        # Add Select All row if there are items
+        if folders_dict:
+            sel_all_frame = ctk.CTkFrame(self, fg_color="transparent")
+            sel_all_frame.pack(fill="x", pady=(2, 6), padx=8)
+            
+            # Check if any folders actually exist to set default select all state
+            any_exists = any(info.exists for info in folders_dict.values())
+            self.select_all_var = ctk.StringVar(value="on" if any_exists else "off")
+            
+            self.select_all_cb = ctk.CTkCheckBox(
+                sel_all_frame,
+                text="Select All / Deselect All",
+                font=AppFonts.BODY_BOLD,
+                text_color=ACCENT_BLUE,
+                variable=self.select_all_var,
+                onvalue="on",
+                offvalue="off",
+                checkmark_color=TEXT_PRIMARY,
+                fg_color=ACCENT_BLUE,
+                hover_color=ACCENT_BLUE,
+                command=self.toggle_all
+            )
+            self.select_all_cb.pack(side="left", anchor="w")
+            
+            # Simple divider
+            div = ctk.CTkFrame(self, height=1, fg_color=BORDER_COLOR)
+            div.pack(fill="x", pady=(0, 6), padx=8)
         
         # Add checkbox row for each folder
         for idx, (name, folder_info) in enumerate(folders_dict.items()):
@@ -143,3 +175,124 @@ class ScrollableFolderList(ctk.CTkScrollableFrame):
             if data['var'].get() == "on":
                 selected.append(name)
         return selected
+
+    def toggle_all(self):
+        val = self.select_all_var.get()
+        for name, data in self.checkboxes.items():
+            if data['checkbox'].cget('state') == 'normal':
+                data['var'].set(val)
+        if self.on_toggle_callback:
+            self.on_toggle_callback()
+
+class ScrollableSteamGamesList(ctk.CTkScrollableFrame):
+    """
+    Scrollable checklist containing installed Steam games with their size on disk.
+    Allows user to select which games to export.
+    """
+    def __init__(self, master, games_dict, **kwargs):
+        border_width = kwargs.pop('border_width', 1)
+        corner_radius = kwargs.pop('corner_radius', 12)
+        super().__init__(
+            master, 
+            fg_color=CARD_COLOR, 
+            label_text="Select Steam Games to Migrate",
+            label_font=AppFonts.HEADING_MEDIUM,
+            label_text_color=TEXT_PRIMARY,
+            border_color=BORDER_COLOR,
+            border_width=border_width,
+            corner_radius=corner_radius,
+            **kwargs
+        )
+        self.checkboxes = {}
+        self.on_toggle_callback = None
+        
+        # Add Select All row if there are items
+        if games_dict:
+            sel_all_frame = ctk.CTkFrame(self, fg_color="transparent")
+            sel_all_frame.pack(fill="x", pady=(2, 6), padx=8)
+            
+            self.select_all_var = ctk.StringVar(value="off") # Default Steam games to off
+            
+            self.select_all_cb = ctk.CTkCheckBox(
+                sel_all_frame,
+                text="Select All / Deselect All",
+                font=AppFonts.BODY_BOLD,
+                text_color=ACCENT_BLUE,
+                variable=self.select_all_var,
+                onvalue="on",
+                offvalue="off",
+                checkmark_color=TEXT_PRIMARY,
+                fg_color=ACCENT_BLUE,
+                hover_color=ACCENT_BLUE,
+                command=self.toggle_all
+            )
+            self.select_all_cb.pack(side="left", anchor="w")
+            
+            # Simple divider
+            div = ctk.CTkFrame(self, height=1, fg_color=BORDER_COLOR)
+            div.pack(fill="x", pady=(0, 6), padx=8)
+        
+        # Add checkbox row for each game
+        if not games_dict:
+            # Show empty label
+            empty_lbl = ctk.CTkLabel(
+                self, 
+                text="No Steam games detected on this system.", 
+                font=AppFonts.BODY,
+                text_color=TEXT_SECONDARY
+            )
+            empty_lbl.pack(pady=40)
+            return
+
+        for idx, (appid, game) in enumerate(games_dict.items()):
+            row_frame = ctk.CTkFrame(self, fg_color="transparent")
+            row_frame.pack(fill="x", pady=4, padx=8)
+            
+            # Checkbox
+            var = ctk.StringVar(value="off") # default unchecked, since steam games can be HUGE!
+            cb = ctk.CTkCheckBox(
+                row_frame, 
+                text=game['name'], 
+                font=AppFonts.BODY_BOLD,
+                text_color=TEXT_PRIMARY,
+                variable=var,
+                onvalue="on",
+                offvalue="off",
+                checkmark_color=TEXT_PRIMARY,
+                fg_color=ACCENT_BLUE,
+                hover_color=ACCENT_BLUE
+            )
+            cb.pack(side="left", anchor="w")
+            
+            self.checkboxes[appid] = {
+                'var': var,
+                'checkbox': cb,
+                'game': game
+            }
+            
+            # Size details
+            desc = format_bytes(game['size_bytes'])
+            details_lbl = ctk.CTkLabel(
+                row_frame, 
+                text=desc, 
+                font=AppFonts.SMALL,
+                text_color=TEXT_PRIMARY
+            )
+            details_lbl.pack(side="right", anchor="e", padx=(10, 0))
+
+    def get_selected_games(self):
+        """Returns list of appids currently checked."""
+        selected = []
+        for appid, data in self.checkboxes.items():
+            if data['var'].get() == "on":
+                selected.append(appid)
+        return selected
+
+    def toggle_all(self):
+        val = self.select_all_var.get()
+        for appid, data in self.checkboxes.items():
+            if data['checkbox'].cget('state') == 'normal':
+                data['var'].set(val)
+        if self.on_toggle_callback:
+            self.on_toggle_callback()
+

@@ -1,7 +1,7 @@
 import os
 import sys
 import customtkinter as ctk
-from gui.components import BG_COLOR, TEXT_PRIMARY, AppFonts
+from gui.components import BG_COLOR, TEXT_PRIMARY, TEXT_SECONDARY, ACCENT_BLUE, AppFonts
 import scanner
 import manifest
 
@@ -42,22 +42,59 @@ class PCMApp(ctk.CTk):
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
         
-        # Import module views locally to prevent circular dependencies
-        from gui.export_view import show_export_welcome_screen
-        from gui.import_view import show_import_welcome_screen
-        from gui.network_view import show_method_selection
+        # Show Loading spinner/text to user instantly
+        loading_lbl = ctk.CTkLabel(
+            self.container, 
+            text="PCM (PC Mover)", 
+            font=("Segoe UI", 26, "bold"), 
+            text_color=TEXT_PRIMARY
+        )
+        loading_lbl.pack(pady=(160, 10))
+        
+        loading_sub = ctk.CTkLabel(
+            self.container, 
+            text="Loading program libraries and modules...", 
+            font=("Segoe UI", 13, "normal"), 
+            text_color=TEXT_SECONDARY
+        )
+        loading_sub.pack(pady=5)
+        
+        self.progress = ctk.CTkProgressBar(self.container, width=250, fg_color="#2D2D2D", progress_color=ACCENT_BLUE)
+        self.progress.pack(pady=15)
+        self.progress.set(0.0)
+        self.progress.start()
         
         # Bind exit protocol
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
-        # Setup initial screen based on auto-detected mode
+        # Force the OS to map/draw the window instantly so the user sees it immediately
+        self.update()
+        
+        # Schedule program libraries and views loading as a deferred callback
+        self.after(150, self.load_initial_screen)
+
+    def load_initial_screen(self):
+        """Deferred launcher that loads view modules and sets up initial screen."""
+        # Stop loading progress
+        try:
+            self.progress.stop()
+        except Exception:
+            pass
+            
+        self.clear_container()
+        
+        # Load views dynamically to keep app startup instant
+        from gui.export_view import show_export_welcome_screen
+        from gui.import_view import show_import_welcome_screen
+        from gui.network_view import show_method_selection
+        
         if self.mode == "import":
-            # Auto-detect if manifest exists in running dir
+            # Auto-detect if manifest exists next to running executable
             running_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
             self.manifest_data = manifest.read_manifest(running_dir)
             if not self.manifest_data:
-                # If we're launched but don't find it, we'll prompt user on the import screen
-                pass
+                parent_dir = os.path.dirname(running_dir)
+                self.manifest_data = manifest.read_manifest(parent_dir)
             show_import_welcome_screen(self)
         else:
             show_method_selection(self)

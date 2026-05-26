@@ -4,7 +4,7 @@ import threading
 import time
 import customtkinter as ctk
 from gui.components import (
-    PremiumCard, HeaderPanel, ScrollableFolderList, AppFonts,
+    PremiumCard, HeaderPanel, ScrollableFolderList, ScrollableSteamGamesList, AppFonts,
     ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED,
     BG_COLOR, BORDER_COLOR, CARD_COLOR
 )
@@ -180,6 +180,11 @@ def show_scanning_loading_screen(app):
                             merged[fname].exists = True
             app.folders_info = merged
             
+            # Detect Steam games
+            import steam_ops
+            app.after_idle(lambda: update_status("Detecting Steam games..."))
+            app.steam_games = steam_ops.detect_steam_games()
+            
             # Proceed to folder result view
             app.after(500, lambda: show_scan_results_screen(app))
         except Exception as e:
@@ -205,6 +210,8 @@ def show_scanning_loading_screen(app):
     threading.Thread(target=run_scan, daemon=True).start()
 
 def show_scan_results_screen(app):
+    print(f"[Debug] show_scan_results_screen: app.folders_info keys: {list(app.folders_info.keys()) if app.folders_info else 'None'}")
+    print(f"[Debug] show_scan_results_screen: app.steam_games keys: {list(app.steam_games.keys()) if hasattr(app, 'steam_games') and app.steam_games else 'None'}")
     app.set_title_subtitle("Export", "Configure")
     app.clear_container()
     
@@ -215,12 +222,36 @@ def show_scan_results_screen(app):
     body = ctk.CTkFrame(app.container, fg_color="transparent")
     body.pack(fill="both", expand=True, pady=(0, 10))
     
-    body.columnconfigure(0, weight=3) # Folder List
+    body.columnconfigure(0, weight=3) # Tabbed Checklist
     body.columnconfigure(1, weight=2) # Drive Selection Panel
+    body.rowconfigure(0, weight=1)    # Ensure both panels expand vertically to fill the window height
     
-    # Left side: Folder Checklist
-    folder_checklist = ScrollableFolderList(body, app.folders_info)
-    folder_checklist.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    # Left side: CTkTabview for Folder and Steam checklists
+    tabview = ctk.CTkTabview(
+        body, 
+        fg_color=CARD_COLOR,
+        segmented_button_selected_color=ACCENT_BLUE,
+        segmented_button_selected_hover_color=ACCENT_BLUE,
+        segmented_button_unselected_hover_color=BG_COLOR,
+        border_color=BORDER_COLOR,
+        border_width=1,
+        corner_radius=12
+    )
+    tabview.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    
+    tabview.add("Personal Folders")
+    tabview.add("Steam Games")
+    
+    # Grid checklists inside tabs to match the tab frame's default grid geometry manager
+    folder_checklist = ScrollableFolderList(tabview.tab("Personal Folders"), app.folders_info, border_width=0, corner_radius=0)
+    folder_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("Personal Folders").grid_rowconfigure(0, weight=1)
+    tabview.tab("Personal Folders").grid_columnconfigure(0, weight=1)
+    
+    steam_checklist = ScrollableSteamGamesList(tabview.tab("Steam Games"), getattr(app, 'steam_games', {}), border_width=0, corner_radius=0)
+    steam_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("Steam Games").grid_rowconfigure(0, weight=1)
+    tabview.tab("Steam Games").grid_columnconfigure(0, weight=1)
     
     # Right side: Target drive options Card
     drive_card = PremiumCard(body)
@@ -247,6 +278,13 @@ def show_scan_results_screen(app):
             if info:
                 total_bytes += info.size_bytes
                 
+        # Steam games size
+        selected_games = steam_checklist.get_selected_games()
+        for appid in selected_games:
+            game = app.steam_games.get(appid)
+            if game:
+                total_bytes += game['size_bytes']
+                
         # Buffer of 50MB or 5% overhead for bookmarks + PCM executable
         total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
         app.migration_size_bytes = total_bytes
@@ -258,6 +296,12 @@ def show_scan_results_screen(app):
     # Hook checkbox toggles to recalculate sizes
     for item in folder_checklist.checkboxes.values():
         item['checkbox'].configure(command=update_size_estimate)
+        
+    for item in steam_checklist.checkboxes.values():
+        item['checkbox'].configure(command=update_size_estimate)
+        
+    folder_checklist.on_toggle_callback = update_size_estimate
+    steam_checklist.on_toggle_callback = update_size_estimate
         
     def scan_drives():
         nonlocal detected_drives
@@ -339,8 +383,9 @@ def show_scan_results_screen(app):
     
     def check_drive_suitability():
         checked = folder_checklist.get_selected_folders()
-        if not checked:
-            warning_lbl.configure(text="⚠️ Select at least one folder to move.", text_color=WARNING_YELLOW)
+        checked_games = steam_checklist.get_selected_games()
+        if not checked and not checked_games:
+            warning_lbl.configure(text="⚠️ Select at least one item to move.", text_color=WARNING_YELLOW)
             start_btn.configure(state="disabled", fg_color=BORDER_COLOR)
             return
             
@@ -363,6 +408,7 @@ def show_scan_results_screen(app):
 
     def proceed_to_confirm():
         app.selected_folders = folder_checklist.get_selected_folders()
+        app.selected_games = steam_checklist.get_selected_games()
         show_format_warning_screen(app)
 
     start_btn = ctk.CTkButton(
@@ -606,6 +652,42 @@ def show_progress_screen(app):
             app.after_idle(lambda: show_export_welcome_screen(app))
             return
 
+        # Copy selected Steam games (global to system)
+        selected_games = getattr(app, 'selected_games', [])
+        steam_manifest_data = []
+        if selected_games and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Exporting Steam Games..."))
+            steam_data_root = os.path.join(pcm_root, "steam_games")
+            os.makedirs(steam_data_root, exist_ok=True)
+            os.makedirs(os.path.join(steam_data_root, "common"), exist_ok=True)
+            
+            for appid in selected_games:
+                if engine.cancelled:
+                    break
+                game = app.steam_games.get(appid)
+                if game:
+                    app.after_idle(lambda g=game['name']: detail_lbl.configure(text=f"Copying game: {g}..."))
+                    
+                    # Copy manifest .acf file
+                    dest_manifest = os.path.join(steam_data_root, os.path.basename(game['manifest_path']))
+                    engine.copy_file_with_conflict_resolution(game['manifest_path'], dest_manifest)
+                    
+                    # Copy game files recursively
+                    dest_common = os.path.join(steam_data_root, "common", game['installdir'])
+                    engine.copy_folder_recursive(game['common_path'], dest_common)
+                    
+                    # Track in manifest list
+                    steam_manifest_data.append({
+                        "appid": appid,
+                        "name": game['name'],
+                        "installdir": game['installdir'],
+                        "size_bytes": game['size_bytes']
+                    })
+
+        if engine.cancelled:
+            app.after_idle(lambda: show_export_welcome_screen(app))
+            return
+
         # Step 3: Write Manifest
         app.after_idle(lambda: op_title.configure(text="Writing Manifest..."))
         app.after_idle(lambda: detail_lbl.configure(text="Generating configuration file..."))
@@ -614,7 +696,8 @@ def show_progress_screen(app):
             drive_path=drive_letter + "\\",
             source_machine=os.environ.get('COMPUTERNAME', 'SOURCE-PC'),
             source_users=user_manifests,
-            total_size_bytes=engine.total_bytes_copied
+            total_size_bytes=engine.total_bytes_copied,
+            steam_games=steam_manifest_data
         )
         
         # Step 4: Copy self to drive root
