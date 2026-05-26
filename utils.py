@@ -1,5 +1,5 @@
 """
-PCM (PC Mover) — Shared Utilities
+PCM (PC Mover) - Shared Utilities
 Cross-cutting helper functions shared across engine and GUI modules.
 """
 
@@ -37,3 +37,38 @@ def format_bytes(size_bytes):
             return f'{size:.2f} {unit}'
         size /= 1024.0
     return f'{size:.2f} PB'
+
+
+def should_exclude_file_or_dir(path):
+    """
+    Checks if a file or directory path corresponds to Google Chrome or other browser
+    cache directories, temporary folders, or log files that should not be migrated.
+    """
+    path_lower = path.lower().replace('\\', '/')
+    
+    # Exclude directories
+    exclude_dirs = [
+        '/cache/',
+        '/code cache/',
+        '/gpucache/',
+        '/application cache/',
+        '/cachestorage/',
+        '/scriptcache/',
+        '/service worker/cachestorage/',
+        '/service worker/scriptcache/',
+        '/service worker/cache/',
+        '/crashpad/'
+    ]
+    for d in exclude_dirs:
+        if d in path_lower or path_lower.endswith(d[:-1]):
+            return True
+            
+    # Exclude log files
+    parts = path_lower.split('/')
+    if parts:
+        file_name = parts[-1]
+        if file_name.endswith('.log') or file_name == 'log' or file_name == 'log.old':
+            return True
+            
+    return False
+

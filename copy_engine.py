@@ -23,7 +23,7 @@ def get_unique_path(target_path):
             return new_path
         counter += 1
 
-# is_reparse_point is imported from utils — see top of file
+# is_reparse_point is imported from utils - see top of file
 
 def copy_file_chunked(src, dst, buffer_size=1024*1024, chunk_callback=None):
     """
@@ -132,9 +132,10 @@ class CopyEngine:
         """
         Recursively copies all items from src_dir to dst_dir.
         Avoids infinite loop if dst_dir is inside src_dir.
-        Skips reparse points (symlinks/junctions) to prevent loop hangs.
+        Skips reparse points (symlinks/junctions) and browser cache/logs.
         """
-        if self.cancelled or is_reparse_point(src_dir):
+        from utils import should_exclude_file_or_dir
+        if self.cancelled or is_reparse_point(src_dir) or should_exclude_file_or_dir(src_dir):
             return
             
         # Get absolute paths to check nesting
@@ -151,11 +152,11 @@ class CopyEngine:
                 if self.cancelled:
                     break
                     
-                # Filter out reparse points from directories list in-place
+                # Filter out reparse points and browser cache/logs from directories list in-place
                 dirs_to_keep = []
                 for d in dirs:
                     dir_path = os.path.join(root, d)
-                    if not is_reparse_point(dir_path):
+                    if not is_reparse_point(dir_path) and not should_exclude_file_or_dir(dir_path):
                         dirs_to_keep.append(d)
                 dirs[:] = dirs_to_keep  # Recurse only into safe folders
                 
@@ -172,8 +173,8 @@ class CopyEngine:
                     if self.cancelled:
                         break
                     src_file = os.path.join(root, file)
-                    if is_reparse_point(src_file):
-                        continue  # Skip virtual/cloud placeholders and symlinks
+                    if is_reparse_point(src_file) or should_exclude_file_or_dir(src_file):
+                        continue  # Skip virtual/cloud placeholders, symlinks, and cache/logs
                     dst_file = os.path.join(current_dst_dir, file)
                     self.copy_file_with_conflict_resolution(src_file, dst_file)
         except Exception as e:

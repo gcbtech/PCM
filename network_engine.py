@@ -7,6 +7,10 @@ import json
 import tempfile
 import threading
 import subprocess
+
+creationflags = 0
+if sys.platform == 'win32':
+    creationflags = subprocess.CREATE_NO_WINDOW
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
@@ -93,7 +97,8 @@ def add_firewall_rule():
         # Delete existing rule first to clean up
         subprocess.run(
             ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule_name}"],
-            capture_output=True, text=True, check=False
+            capture_output=True, text=True, check=False,
+            creationflags=creationflags
         )
         
         # Add new rule
@@ -106,7 +111,7 @@ def add_firewall_rule():
             "enable=yes",
             "profile=any"
         ]
-        res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        res = subprocess.run(cmd, capture_output=True, text=True, check=False, creationflags=creationflags)
         success = res.returncode == 0
         print(f"[Network] Firewall rule addition result: {'SUCCESS' if success else 'FAILED'} (code {res.returncode})")
         return success
@@ -123,7 +128,8 @@ def remove_firewall_rule():
     try:
         res = subprocess.run(
             ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule_name}"],
-            capture_output=True, text=True, check=False
+            capture_output=True, text=True, check=False,
+            creationflags=creationflags
         )
         return res.returncode == 0
     except Exception as e:
@@ -243,7 +249,7 @@ class PCMNetworkReceiver:
                 self.server_sock.close()
             except Exception:
                 pass
-        # Clean up cert files — may already be None if deleted after SSL load
+        # Clean up cert files - may already be None if deleted after SSL load
         for cert_file in (self.cert_path, self.key_path):
             if cert_file and os.path.exists(cert_file):
                 try:
@@ -465,7 +471,7 @@ class PCMNetworkReceiver:
                     
                     file_bytes_read += len(data)
                     total_bytes_written += len(data)
-                    self.progress_cb(rel_path, len(data), files_processed, manifest_data['total_files'])
+                    self.progress_cb(rel_path, len(data), files_processed, manifest_data['total_files'], file_size)
 
                 if fdst:
                     fdst.close()
@@ -481,7 +487,7 @@ class PCMNetworkReceiver:
                         'error': ''
                     })
                     # Report file iteration update to UI
-                    self.progress_cb(rel_path, 0, files_processed, manifest_data['total_files'])
+                    self.progress_cb(rel_path, 0, files_processed, manifest_data['total_files'], file_size)
 
             # 8. Post-process browser bookmarks if they were sent
             # Check if temporary bookmarks folder exists, and trigger import
@@ -755,7 +761,7 @@ class PCMNetworkSender:
                                 send_frame(self.ssl_sock, CMD_FILE_CHUNK, payload)
                                 bytes_sent_for_file += len(chunk)
                                 total_bytes_sent += len(chunk)
-                                self.progress_cb(rel_path, len(chunk), files_processed, total_files)
+                                self.progress_cb(rel_path, len(chunk), files_processed, total_files, file_size)
                     except Exception as e:
                         print(f"[Network] Error reading file {src_path}: {e}")
                         # In case of read failure, we still send FILE_END so receiver closes file safely
@@ -763,7 +769,7 @@ class PCMNetworkSender:
                 send_frame(self.ssl_sock, CMD_FILE_END, b"")
                 files_processed += 1
                 # Report absolute file update to GUI
-                self.progress_cb(rel_path, 0, files_processed, total_files)
+                self.progress_cb(rel_path, 0, files_processed, total_files, file_size)
 
             # 7. Complete transfer
             if not self.cancelled:

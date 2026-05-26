@@ -96,7 +96,7 @@ def scan_user_profiles():
         
     return profiles
 
-# is_reparse_point is imported from utils — see top of file
+# is_reparse_point is imported from utils - see top of file
 
 def get_folder_stats(folder_path):
     """

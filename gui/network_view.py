@@ -44,7 +44,7 @@ def show_method_selection(app):
     usb_card = PremiumCard(grid_container)
     usb_card.grid(row=0, column=0, padx=15, pady=10, sticky="nsew")
 
-    usb_lbl = ctk.CTkLabel(usb_card, text="💾 USB / External Drive", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    usb_lbl = ctk.CTkLabel(usb_card, text="USB / External Drive", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
     usb_lbl.pack(pady=(20, 10))
 
     usb_desc = ctk.CTkLabel(
@@ -74,7 +74,7 @@ def show_method_selection(app):
     net_card = PremiumCard(grid_container)
     net_card.grid(row=0, column=1, padx=15, pady=10, sticky="nsew")
 
-    net_lbl = ctk.CTkLabel(net_card, text="🌐 Network Transfer (LAN/Link)", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    net_lbl = ctk.CTkLabel(net_card, text="Network Transfer (LAN/Link)", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
     net_lbl.pack(pady=(20, 10))
 
     net_desc = ctk.CTkLabel(
@@ -130,7 +130,7 @@ def show_network_role_selection(app):
     send_card = PremiumCard(grid_container)
     send_card.grid(row=0, column=0, padx=15, pady=10, sticky="nsew")
 
-    send_lbl = ctk.CTkLabel(send_card, text="📤 Send Files", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    send_lbl = ctk.CTkLabel(send_card, text="Send Files", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
     send_lbl.pack(pady=(20, 10))
 
     send_desc = ctk.CTkLabel(
@@ -159,7 +159,7 @@ def show_network_role_selection(app):
     recv_card = PremiumCard(grid_container)
     recv_card.grid(row=0, column=1, padx=15, pady=10, sticky="nsew")
 
-    recv_lbl = ctk.CTkLabel(recv_card, text="📥 Receive Files", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+    recv_lbl = ctk.CTkLabel(recv_card, text="Receive Files", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
     recv_lbl.pack(pady=(20, 10))
 
     recv_desc = ctk.CTkLabel(
@@ -190,7 +190,7 @@ def show_network_role_selection(app):
     
     back_btn = ctk.CTkButton(
         footer_frame, 
-        text="← Back to Method Selection", 
+        text="Back to Method Selection", 
         font=AppFonts.BODY, 
         fg_color="transparent", 
         text_color=TEXT_SECONDARY,
@@ -224,7 +224,7 @@ def show_network_receiver_setup(app):
     code_lbl = ctk.CTkLabel(card, text=code, font=("Courier New", 42, "bold"), text_color=SUCCESS_GREEN)
     code_lbl.pack(pady=10)
 
-    status_lbl = ctk.CTkLabel(card, text="⌛ Waiting for old computer to discover and connect...", font=AppFonts.SUBTITLE, text_color=TEXT_PRIMARY)
+    status_lbl = ctk.CTkLabel(card, text="Waiting for old computer to discover and connect...", font=AppFonts.SUBTITLE, text_color=TEXT_PRIMARY)
     status_lbl.pack(pady=20)
 
     # List local network details to help user if needed
@@ -253,9 +253,9 @@ def show_network_receiver_setup(app):
         received_manifest.update(manifest_data)
         manifest_event.set()
         
-    def progress_callback(current_file, bytes_read, files_processed, total_files):
+    def progress_callback(current_file, bytes_read, files_processed, total_files, file_size=0):
         # Dispatches UI safe progress updates
-        app.after(0, lambda: update_receiver_progress(app, current_file, bytes_read, files_processed, total_files))
+        app.after(0, lambda: update_receiver_progress(app, current_file, bytes_read, files_processed, total_files, file_size))
 
     def completion_callback(summary_text):
         app.after(0, lambda: show_network_completion(app, summary_text))
@@ -313,7 +313,7 @@ def show_network_receiver_target_selection(app, manifest_data, target_selected_e
 
     meta_lbl = ctk.CTkLabel(
         card, 
-        text=f"📂 Incoming Data from: {manifest_data.get('source_machine', 'Old PC')}\n"
+        text=f"Incoming Data from: {manifest_data.get('source_machine', 'Old PC')}\n"
              f"Total Files: {manifest_data.get('total_files', 0)}  |  Total Size: {manifest_data.get('total_size', 0) / (1024*1024*1024):.2f} GB",
         font=AppFonts.BODY_BOLD,
         text_color=TEXT_PRIMARY,
@@ -336,7 +336,8 @@ def show_network_receiver_target_selection(app, manifest_data, target_selected_e
         font=AppFonts.BODY,
         fg_color=BORDER_COLOR,
         button_color=ACCENT_BLUE,
-        button_hover_color="#2563EB"
+        button_hover_color="#2563EB",
+        text_color=TEXT_PRIMARY
     )
     user_dropdown.pack(side="left", padx=10)
 
@@ -374,6 +375,7 @@ def show_network_receiver_target_selection(app, manifest_data, target_selected_e
         text="Cancel & Disconnect", 
         font=AppFonts.BODY_BOLD, 
         fg_color=BORDER_COLOR,
+        text_color=TEXT_PRIMARY,
         hover_color=DANGER_RED,
         command=cancel_click,
         width=160
@@ -484,7 +486,7 @@ def show_network_sender_user_select(app):
 
     back_btn = ctk.CTkButton(
         card, 
-        text="← Back to Role Selection", 
+        text="Back to Role Selection", 
         font=AppFonts.BODY, 
         fg_color="transparent", 
         text_color=TEXT_SECONDARY,
@@ -507,7 +509,7 @@ def show_network_sender_scanning(app):
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, padx=20, pady=20)
 
-    status_lbl = ctk.CTkLabel(card, text="🔍 Scanning user folders...", font=AppFonts.SUBTITLE, text_color=TEXT_PRIMARY)
+    status_lbl = ctk.CTkLabel(card, text="Scanning user folders...", font=AppFonts.SUBTITLE, text_color=TEXT_PRIMARY)
     status_lbl.pack(pady=40)
 
     progress_bar = ctk.CTkProgressBar(card, orientation="horizontal", width=400, mode="indeterminate", progress_color=ACCENT_BLUE)
@@ -565,6 +567,7 @@ def show_network_sender_checklist(app):
         corner_radius=12
     )
     tabview.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    tabview._segmented_button.configure(font=("Segoe UI", 11, "bold"))
 
     tabview.add("Personal Folders")
     tabview.add("Steam Games")
@@ -614,7 +617,7 @@ def show_network_sender_checklist(app):
             return
             
         confirm = messagebox.askyesno(
-            "⚠️ PCM Custom Migration Warning",
+            "PCM Custom Migration Warning",
             "You are selecting a folder that is not normally moved by PCM.\n\n"
             "PCM cannot guarantee that manually selected programs will function correctly on the new PC "
             "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
@@ -669,7 +672,7 @@ def show_network_sender_checklist(app):
             return
             
         confirm = messagebox.askyesno(
-            "⚠️ PCM Custom Migration Warning",
+            "PCM Custom Migration Warning",
             "You are selecting files that are not normally moved by PCM.\n\n"
             "PCM cannot guarantee that manually selected files/programs will function correctly on the new PC "
             "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
@@ -729,7 +732,7 @@ def show_network_sender_checklist(app):
     
     add_folder_btn = ctk.CTkButton(
         btn_frame,
-        text="📁 Add Custom Folder",
+        text="Add Custom Folder",
         font=AppFonts.BODY_BOLD,
         fg_color=ACCENT_BLUE,
         hover_color=ACCENT_BLUE,
@@ -739,7 +742,7 @@ def show_network_sender_checklist(app):
     
     add_file_btn = ctk.CTkButton(
         btn_frame,
-        text="📄 Add Custom Files",
+        text="Add Custom Files",
         font=AppFonts.BODY_BOLD,
         fg_color=ACCENT_BLUE,
         hover_color=ACCENT_BLUE,
@@ -824,9 +827,10 @@ def show_network_sender_checklist(app):
 
     back_btn = ctk.CTkButton(
         summary_card,
-        text="← Back to Profile Select",
+        text="Back to Profile Select",
         font=AppFonts.BODY_BOLD,
         fg_color=BORDER_COLOR,
+        text_color=TEXT_PRIMARY,
         hover_color=ACCENT_BLUE,
         command=lambda: show_network_sender_user_select(app),
         height=35
@@ -912,7 +916,7 @@ def show_network_sender_connection(app):
 
     back_btn = ctk.CTkButton(
         card, 
-        text="← Back to Checklist", 
+        text="Back to Checklist", 
         font=AppFonts.BODY, 
         fg_color="transparent", 
         text_color=TEXT_SECONDARY,
@@ -935,7 +939,7 @@ def initiate_network_sender(app, code, receiver_ip=None):
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, padx=20, pady=20)
 
-    status_lbl = ctk.CTkLabel(card, text="⌛ Connecting to receiver and preparing data transmission...", font=AppFonts.SUBTITLE, text_color=TEXT_PRIMARY)
+    status_lbl = ctk.CTkLabel(card, text="Connecting to receiver and preparing data transmission...", font=AppFonts.SUBTITLE, text_color=TEXT_PRIMARY)
     status_lbl.pack(pady=40)
 
     progress_bar = ctk.CTkProgressBar(card, orientation="horizontal", width=400, mode="indeterminate", progress_color=ACCENT_BLUE)
@@ -948,13 +952,18 @@ def initiate_network_sender(app, code, receiver_ip=None):
         
         # Enumerate files recursively ONLY for selected categories
         files_to_send = []
+        from utils import should_exclude_file_or_dir
         for name, folder_info in folders_dict.items():
             if name not in app.selected_folders:
                 continue
             if folder_info.exists:
-                for root, dirs, files in os.walk(folder_info.path):
+                for root, dirs, files in os.walk(folder_info.path, topdown=True):
+                    # Filter directories in-place to prevent recursing into cache folders
+                    dirs[:] = [d for d in dirs if not should_exclude_file_or_dir(os.path.join(root, d))]
                     for file in files:
                         file_path = os.path.join(root, file)
+                        if should_exclude_file_or_dir(file_path):
+                            continue
                         try:
                             # Skip symlinks/reparse points to avoid loop hangs
                             from copy_engine import is_reparse_point
@@ -1104,9 +1113,13 @@ def initiate_network_sender(app, code, receiver_ip=None):
                         rel_path = item["rel_path"]
                         if os.path.exists(item_path):
                             if item["type"] == "folder":
-                                for root, dirs, files in os.walk(item_path):
+                                for root, dirs, files in os.walk(item_path, topdown=True):
+                                    from utils import should_exclude_file_or_dir
+                                    dirs[:] = [d for d in dirs if not should_exclude_file_or_dir(os.path.join(root, d))]
                                     for file in files:
                                         file_path = os.path.join(root, file)
+                                        if should_exclude_file_or_dir(file_path):
+                                            continue
                                         try:
                                             from copy_engine import is_reparse_point
                                             if is_reparse_point(file_path):
@@ -1147,8 +1160,8 @@ def initiate_network_sender(app, code, receiver_ip=None):
         # Triggers UI safe updates
         app.after(0, lambda: show_network_progress(app, total_files, total_size, "sender"))
 
-        def progress_callback(current_file, bytes_sent, files_processed, total):
-            app.after(0, lambda: update_sender_progress(app, current_file, bytes_sent, files_processed, total))
+        def progress_callback(current_file, bytes_sent, files_processed, total, file_size=0):
+            app.after(0, lambda: update_sender_progress(app, current_file, bytes_sent, files_processed, total, file_size))
 
         def completion_callback(summary_text):
             app.after(0, lambda: show_network_completion(app, summary_text))
@@ -1226,6 +1239,12 @@ def show_network_progress(app, total_files, total_size, role):
         'last_update_bytes': 0,
         'current_speed': 0,
         
+        # Current file tracking state
+        'current_file_path': None,
+        'current_file_size': 0,
+        'current_file_copied': 0,
+        'current_file_start_time': time.time(),
+        
         # UI controls
         'current_file_lbl': current_file_lbl,
         'progress_bar': progress_bar,
@@ -1233,14 +1252,14 @@ def show_network_progress(app, total_files, total_size, role):
         'cancel_btn': cancel_btn
     }
 
-def update_receiver_progress(app, current_file, bytes_read, files_processed, total_files):
-    update_progress_stats(current_file, bytes_read, files_processed, total_files)
+def update_receiver_progress(app, current_file, bytes_read, files_processed, total_files, file_size=0):
+    update_progress_stats(current_file, bytes_read, files_processed, total_files, file_size)
 
-def update_sender_progress(app, current_file, bytes_sent, files_processed, total_files):
-    update_progress_stats(current_file, bytes_sent, files_processed, total_files)
+def update_sender_progress(app, current_file, bytes_sent, files_processed, total_files, file_size=0):
+    update_progress_stats(current_file, bytes_sent, files_processed, total_files, file_size)
 
-def update_progress_stats(current_file, bytes_delta, files_processed, total_files):
-    """Performs dynamic MB/s speed estimates, ETA and progress modifications."""
+def update_progress_stats(current_file, bytes_delta, files_processed, total_files, file_size=0):
+    """Performs dynamic MB/s speed estimates, stable average global ETA, and current file ETA."""
     global progress_widgets
     if not progress_widgets:
         return
@@ -1251,7 +1270,16 @@ def update_progress_stats(current_file, bytes_delta, files_processed, total_file
     current_time = time.time()
     elapsed = current_time - progress_widgets['start_time']
     
-    # Calculate speed every 0.5s for display stability
+    # Track current file progress
+    if progress_widgets.get('current_file_path') != current_file:
+        progress_widgets['current_file_path'] = current_file
+        progress_widgets['current_file_size'] = file_size
+        progress_widgets['current_file_copied'] = 0
+        progress_widgets['current_file_start_time'] = current_time
+
+    progress_widgets['current_file_copied'] += bytes_delta
+
+    # Calculate rolling speed every 0.5s for display stability
     time_delta = current_time - progress_widgets['last_update_time']
     if time_delta >= 0.5:
         bytes_delta_chunk = progress_widgets['bytes_transferred'] - progress_widgets['last_update_bytes']
@@ -1270,15 +1298,31 @@ def update_progress_stats(current_file, bytes_delta, files_processed, total_file
         ratio = progress_widgets['bytes_transferred'] / total_size
         ratio = min(max(ratio, 0.0), 1.0)
         
-    # Calculate remaining time
+    # Calculate global remaining time using stable cumulative average speed from start of transfer
     eta_text = "Estimating..."
-    if ratio > 0.02 and current_speed_mbs > 0:
-        remaining_bytes = total_size - progress_widgets['bytes_transferred']
-        remaining_seconds = remaining_bytes / (current_speed_mbs * 1024 * 1024)
+    overall_speed_bps = progress_widgets['bytes_transferred'] / elapsed if elapsed > 0 else 0
+    if overall_speed_bps > 0:
+        remaining_bytes = max(0, total_size - progress_widgets['bytes_transferred'])
+        remaining_seconds = remaining_bytes / overall_speed_bps
         if remaining_seconds > 60:
             eta_text = f"{int(remaining_seconds // 60)}m {int(remaining_seconds % 60)}s"
         else:
             eta_text = f"{int(remaining_seconds)}s"
+
+    # Calculate Current File ETA
+    file_eta_text = "-"
+    file_copied = progress_widgets['current_file_copied']
+    file_size_bytes = progress_widgets['current_file_size']
+    file_elapsed = current_time - progress_widgets['current_file_start_time']
+    file_speed_bps = file_copied / file_elapsed if file_elapsed > 0 else 0
+    
+    if file_speed_bps > 0 and file_size_bytes > file_copied:
+        file_remaining = file_size_bytes - file_copied
+        file_eta_secs = file_remaining / file_speed_bps
+        if file_eta_secs < 60:
+            file_eta_text = f"{int(file_eta_secs)}s"
+        else:
+            file_eta_text = f"{int(file_eta_secs // 60)}m {int(file_eta_secs % 60)}s"
 
     # Update GUI widgets
     try:
@@ -1287,6 +1331,7 @@ def update_progress_stats(current_file, bytes_delta, files_processed, total_file
         progress_widgets['stats_lbl'].configure(
             text=f"Speed: {current_speed_mbs:.2f} MB/s  |  "
                  f"Remaining: {eta_text}  |  "
+                 f"File ETA: {file_eta_text}  |  "
                  f"Files: {files_processed} of {total_files}  |  "
                  f"{progress_widgets['bytes_transferred'] / (1024*1024*1024):.2f} GB of {total_size / (1024*1024*1024):.2f} GB"
         )
@@ -1318,7 +1363,7 @@ def show_network_completion(app, summary):
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, padx=20, pady=10)
 
-    success_lbl = ctk.CTkLabel(card, text="✅", font=("Segoe UI", 56, "normal"), text_color=SUCCESS_GREEN)
+    success_lbl = ctk.CTkLabel(card, text="SUCCESS", font=("Segoe UI", 36, "bold"), text_color=SUCCESS_GREEN)
     success_lbl.pack(pady=(20, 5))
 
     heading_lbl = ctk.CTkLabel(card, text="Your files have been moved!", font=AppFonts.TITLE, text_color=TEXT_PRIMARY)
@@ -1335,6 +1380,7 @@ def show_network_completion(app, summary):
         text="Back to Welcome", 
         font=AppFonts.BODY_BOLD, 
         fg_color=BORDER_COLOR,
+        text_color=TEXT_PRIMARY,
         hover_color=ACCENT_BLUE,
         command=lambda: show_method_selection(app),
         width=160
@@ -1364,7 +1410,7 @@ def show_network_error(app, error_msg):
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, padx=20, pady=10)
 
-    err_lbl = ctk.CTkLabel(card, text="❌", font=("Segoe UI", 56, "normal"), text_color=DANGER_RED)
+    err_lbl = ctk.CTkLabel(card, text="ERROR", font=("Segoe UI", 36, "bold"), text_color=DANGER_RED)
     err_lbl.pack(pady=(20, 5))
 
     heading_lbl = ctk.CTkLabel(card, text="An Error Occurred", font=AppFonts.TITLE, text_color=TEXT_PRIMARY)

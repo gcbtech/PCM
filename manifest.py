@@ -3,7 +3,7 @@ import json
 import time
 
 MANIFEST_FILENAME = "manifest.json"
-CURRENT_VERSION = "1.5"
+CURRENT_VERSION = "2.0"
 
 def create_manifest(drive_path, source_machine, source_users, total_size_bytes, steam_games=None, custom_items=None, settings=None, appdata=None):
     """

@@ -2,16 +2,37 @@ import customtkinter as ctk
 import manifest
 from utils import format_bytes
 
-# Premium Visual Style Tokens
-BG_COLOR = "#121212"
-CARD_COLOR = "#1E1E1E"
-ACCENT_BLUE = "#3A86FF"
-SUCCESS_GREEN = "#38B000"
-WARNING_YELLOW = "#FFBE0B"
-DANGER_RED = "#FF006E"
-TEXT_PRIMARY = "#FFFFFF"
-TEXT_SECONDARY = "#A0A0A0"
-BORDER_COLOR = "#2D2D2D"
+# Premium Visual Style Tokens (Light Mode, Dark Mode)
+BG_COLOR = ("#F3F4F6", "#0B0C10")
+CARD_COLOR = ("#FFFFFF", "#17181F")
+ACCENT_BLUE = ("#1A56DB", "#4F46E5")
+SUCCESS_GREEN = ("#16A34A", "#10B981")
+WARNING_YELLOW = ("#D97706", "#F59E0B")
+DANGER_RED = ("#DC2626", "#EF4444")
+TEXT_PRIMARY = ("#111827", "#F9FAFB")
+TEXT_SECONDARY = ("#4B5563", "#9CA3AF")
+BORDER_COLOR = ("#E5E7EB", "#2D313E")
+
+
+def make_scrollable_frame_auto_hide(scroll_frame):
+    """
+    Overrides yscrollcommand on a CTkScrollableFrame to auto-hide the scrollbar
+    if all content fits within the viewport.
+    """
+    canvas = scroll_frame._parent_canvas
+    scrollbar = scroll_frame._scrollbar
+    
+    def custom_set(first, last):
+        first = float(first)
+        last = float(last)
+        if first <= 0.0 and last >= 1.0:
+            scrollbar.grid_remove()
+        else:
+            scrollbar.grid(row=1, column=1, sticky="nesw", padx=0, pady=14)
+        scrollbar.set(first, last)
+        
+    canvas.configure(yscrollcommand=custom_set)
+
 
 class AppFonts:
     @staticmethod
@@ -167,6 +188,7 @@ class ScrollableFolderList(ctk.CTkScrollableFrame):
                 text_color=text_color
             )
             details_lbl.pack(side="right", anchor="e", padx=(10, 0))
+        make_scrollable_frame_auto_hide(self)
 
     def get_selected_folders(self):
         """Returns list of folder names currently checked."""
@@ -279,6 +301,7 @@ class ScrollableSteamGamesList(ctk.CTkScrollableFrame):
                 text_color=TEXT_PRIMARY
             )
             details_lbl.pack(side="right", anchor="e", padx=(10, 0))
+        make_scrollable_frame_auto_hide(self)
 
     def get_selected_games(self):
         """Returns list of appids currently checked."""
@@ -325,7 +348,7 @@ class ScrollableCustomItemList(ctk.CTkScrollableFrame):
         
         warn_lbl = ctk.CTkLabel(
             warn_frame,
-            text="⚠️  Caution: Custom items (e.g. from Program Files or other profiles) may rely on Registry entries, "
+            text="Caution: Custom items (e.g. from Program Files or other profiles) may rely on Registry entries, "
                  "drivers, or machine-locked settings. PCM copies files only. Migrate custom programs at your own risk.",
             font=AppFonts.SMALL,
             text_color=WARNING_YELLOW,
@@ -344,6 +367,7 @@ class ScrollableCustomItemList(ctk.CTkScrollableFrame):
                 justify="center"
             )
             empty_lbl.pack(pady=40)
+            make_scrollable_frame_auto_hide(self)
             return
 
         for idx, item in enumerate(items_list):
@@ -351,7 +375,7 @@ class ScrollableCustomItemList(ctk.CTkScrollableFrame):
             row_frame.pack(fill="x", pady=4, padx=8)
             
             # Type icon and path
-            icon = "📁 " if item['type'] == 'folder' else "📄 "
+            icon = "[Folder] " if item['type'] == 'folder' else "[File] "
             
             # Let's truncate long paths in the middle so the UI remains clean
             display_path = item['path']
@@ -383,16 +407,17 @@ class ScrollableCustomItemList(ctk.CTkScrollableFrame):
             # Red Remove Button
             remove_btn = ctk.CTkButton(
                 right_panel,
-                text="🗑️",
-                width=30,
+                text="Remove",
+                width=60,
                 height=24,
                 fg_color="transparent",
                 hover_color=DANGER_RED,
                 text_color=DANGER_RED,
-                font=("Segoe UI", 12, "bold"),
+                font=("Segoe UI", 11, "bold"),
                 command=lambda p=item['path']: remove_item_callback(p)
             )
             remove_btn.pack(side="right")
+        make_scrollable_frame_auto_hide(self)
 
 
 class ScrollableSettingsList(ctk.CTkScrollableFrame):
@@ -456,6 +481,7 @@ class ScrollableSettingsList(ctk.CTkScrollableFrame):
                 justify="right"
             )
             details_lbl.pack(side="right", anchor="e", padx=(10, 0))
+        make_scrollable_frame_auto_hide(self)
 
     def on_cb_toggle(self):
         if self.on_toggle_callback:
@@ -559,6 +585,7 @@ class ScrollableAppDataList(ctk.CTkScrollableFrame):
                 text_color=text_color
             )
             details_lbl.pack(side="right", anchor="e", padx=(10, 0))
+        make_scrollable_frame_auto_hide(self)
 
     def on_cb_toggle(self):
         if self.on_toggle_callback:

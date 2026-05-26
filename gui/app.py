@@ -1,9 +1,34 @@
 import os
 import sys
+import json
 import customtkinter as ctk
-from gui.components import BG_COLOR, TEXT_PRIMARY, TEXT_SECONDARY, ACCENT_BLUE, AppFonts
+from gui.components import BG_COLOR, TEXT_PRIMARY, TEXT_SECONDARY, ACCENT_BLUE, AppFonts, CARD_COLOR, BORDER_COLOR
 import scanner
 import manifest
+
+def get_settings_file_path():
+    appdata = os.environ.get('LOCALAPPDATA') or os.path.expanduser('~')
+    pcm_dir = os.path.join(appdata, "PCM")
+    os.makedirs(pcm_dir, exist_ok=True)
+    return os.path.join(pcm_dir, "settings.json")
+
+def load_app_settings():
+    path = get_settings_file_path()
+    if os.path.exists(path):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"appearance_mode": "system"}
+
+def save_app_settings(settings):
+    path = get_settings_file_path()
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, indent=4)
+    except Exception:
+        pass
 
 class PCMApp(ctk.CTk):
     def __init__(self, mode="export"):
@@ -11,15 +36,17 @@ class PCMApp(ctk.CTk):
         
         # Window configuration
         self.title(f"PCM (PC Mover) V{manifest.CURRENT_VERSION}")
-        self.geometry("780x640")
-        self.minsize(700, 580)
+        self.geometry("1024x768")
+        self.minsize(980, 700)
         self.configure(fg_color=BG_COLOR)
         
         # Center the window on screen
         self.center_window()
         
         # Styling initialization
-        ctk.set_appearance_mode("dark")
+        self.settings = load_app_settings()
+        self.appearance_mode = self.settings.get("appearance_mode", "system")
+        ctk.set_appearance_mode(self.appearance_mode)
         ctk.set_default_color_theme("blue")
         
         # Shared state
@@ -42,6 +69,20 @@ class PCMApp(ctk.CTk):
         # Container frame for current screen
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Settings Gear Cog Button (absolute position at top-right)
+        self.settings_btn = ctk.CTkButton(
+            self,
+            text="⚙",
+            font=("Segoe UI", 18, "normal"),
+            width=30,
+            height=30,
+            fg_color="transparent",
+            hover_color=CARD_COLOR,
+            text_color=TEXT_SECONDARY,
+            command=self.show_settings_popup
+        )
+        self.settings_btn.place(relx=1.0, rely=0.0, anchor="ne", x=-10, y=10)
         
         # Show Loading spinner/text to user instantly
         loading_lbl = ctk.CTkLabel(
@@ -73,6 +114,7 @@ class PCMApp(ctk.CTk):
         
         # Schedule program libraries and views loading as a deferred callback
         self.after(150, self.load_initial_screen)
+
 
     def load_initial_screen(self):
         """Deferred launcher that loads view modules and sets up initial screen."""
@@ -154,3 +196,63 @@ class PCMApp(ctk.CTk):
             
         self.destroy()
         sys.exit(0)
+
+    def set_theme(self, theme_mode):
+        self.appearance_mode = theme_mode
+        self.settings["appearance_mode"] = theme_mode
+        save_app_settings(self.settings)
+        ctk.set_appearance_mode(theme_mode)
+
+    def show_settings_popup(self):
+        # Create a small custom modal window for settings
+        popup = ctk.CTkToplevel(self)
+        popup.title("Settings")
+        popup.geometry("320x220")
+        popup.resizable(False, False)
+        popup.attributes("-topmost", True)
+        
+        # Center popup relative to main window
+        self.update_idletasks()
+        mx = self.winfo_x()
+        my = self.winfo_y()
+        mw = self.winfo_width()
+        mh = self.winfo_height()
+        popup.geometry(f"+{mx + mw//2 - 160}+{my + mh//2 - 110}")
+        
+        popup.configure(fg_color=BG_COLOR)
+        
+        # Title
+        title_lbl = ctk.CTkLabel(popup, text="Settings", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
+        title_lbl.pack(pady=(20, 10))
+        
+        # Theme Section
+        theme_lbl = ctk.CTkLabel(popup, text="Appearance Mode:", font=AppFonts.BODY, text_color=TEXT_SECONDARY)
+        theme_lbl.pack(pady=5)
+        
+        theme_var = ctk.StringVar(value=self.appearance_mode.capitalize())
+        
+        def on_theme_change(choice):
+            mode = choice.lower()
+            self.set_theme(mode)
+            
+        theme_menu = ctk.CTkOptionMenu(
+            popup,
+            values=["System", "Light", "Dark"],
+            variable=theme_var,
+            command=on_theme_change,
+            fg_color=ACCENT_BLUE,
+            button_color=ACCENT_BLUE
+        )
+        theme_menu.pack(pady=5)
+        
+        # Close Button
+        close_btn = ctk.CTkButton(
+            popup,
+            text="Close",
+            font=AppFonts.BODY_BOLD,
+            fg_color=BORDER_COLOR,
+            text_color=TEXT_PRIMARY,
+            command=popup.destroy
+        )
+        close_btn.pack(pady=(20, 10))
+

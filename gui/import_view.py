@@ -19,7 +19,7 @@ def show_import_welcome_screen(app):
     app.set_title_subtitle("Import", "Welcome")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Import Files", subtitle="Let's restore your files to this PC")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Import Files", subtitle="Let's restore your files to this PC")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
@@ -193,7 +193,7 @@ def show_import_welcome_screen(app):
     # Manual Switch to Export Mode Link
     switch_btn = ctk.CTkButton(
         app.container,
-        text="Need to export files instead? Switch to Export Mode →",
+        text="Need to export files instead? Switch to Export Mode",
         font=AppFonts.SMALL,
         fg_color="transparent",
         hover=False,
@@ -206,7 +206,7 @@ def show_import_welcome_screen(app):
     from gui.network_view import show_method_selection
     back_btn = ctk.CTkButton(
         app.container,
-        text="← Back to Transfer Method Selection",
+        text="Back to Transfer Method Selection",
         font=AppFonts.SMALL,
         fg_color="transparent",
         hover=False,
@@ -246,7 +246,7 @@ def show_target_user_screen(app):
     app.set_title_subtitle("Import", "User Mapping")
     app.clear_container()
 
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — User Account Mapping",
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - User Account Mapping",
                          subtitle="Map source accounts to destination accounts")
     header.pack(fill="x")
 
@@ -284,7 +284,7 @@ def show_target_user_screen(app):
 
     profile_names = [p.username for p in app.user_profiles]
     if not profile_names:
-        # No local profiles — offer to create mapping to current user
+        # No local profiles - offer to create mapping to current user
         curr_user = os.environ.get('USERNAME', 'DefaultUser')
         users_dir = scanner.get_users_root()
         fallback = scanner.UserProfile(curr_user, os.path.join(users_dir, curr_user))
@@ -300,7 +300,7 @@ def show_target_user_screen(app):
                                font=AppFonts.BODY_BOLD, text_color=SUCCESS_GREEN)
         src_lbl.grid(row=i, column=0, sticky="w", pady=8, padx=5)
 
-        arrow_lbl = ctk.CTkLabel(mapping_frame, text="  →  ", font=AppFonts.BODY_BOLD, text_color=TEXT_SECONDARY)
+        arrow_lbl = ctk.CTkLabel(mapping_frame, text="  to  ", font=AppFonts.BODY_BOLD, text_color=TEXT_SECONDARY)
         arrow_lbl.grid(row=i, column=1, pady=8)
 
         # Try to auto-match by username
@@ -332,6 +332,7 @@ def show_target_user_screen(app):
         text="Go Back",
         font=AppFonts.BODY_BOLD,
         fg_color=BORDER_COLOR,
+        text_color=TEXT_PRIMARY,
         command=lambda: show_import_welcome_screen(app),
         width=120
     )
@@ -362,7 +363,7 @@ def show_conflict_screen(app):
     app.set_title_subtitle("Import", "Preferences")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Preferences", subtitle="Duplicate file resolution")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Preferences", subtitle="Duplicate file resolution")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
@@ -443,6 +444,7 @@ def show_conflict_screen(app):
         text="Go Back", 
         font=AppFonts.BODY_BOLD, 
         fg_color=BORDER_COLOR, 
+        text_color=TEXT_PRIMARY,
         command=back_click,
         width=120
     )
@@ -466,7 +468,7 @@ def show_import_progress_screen(app):
     app.set_title_subtitle("Import", "Progress")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Importing", subtitle="Restoring files to this computer...")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Importing", subtitle="Restoring files to this computer...")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
@@ -485,7 +487,7 @@ def show_import_progress_screen(app):
     detail_lbl = ctk.CTkLabel(card, text="", font=AppFonts.SMALL, text_color=TEXT_SECONDARY, justify="center")
     detail_lbl.pack(pady=20, padx=20)
     
-    cancel_btn = ctk.CTkButton(card, text="Cancel", font=AppFonts.BODY_BOLD, fg_color=BORDER_COLOR, hover_color=DANGER_RED)
+    cancel_btn = ctk.CTkButton(card, text="Cancel", font=AppFonts.BODY_BOLD, fg_color=BORDER_COLOR, text_color=TEXT_PRIMARY, hover_color=DANGER_RED)
     cancel_btn.pack(side="bottom", pady=25)
     
     # State tracker
@@ -493,7 +495,7 @@ def show_import_progress_screen(app):
     
     def on_cancel():
         engine.cancel()
-        cancel_btn.configure(state="disabled", text="Cancelling...")
+        cancel_btn.configure(state="disabled", text="Cancelling...", text_color=TEXT_SECONDARY)
         
     cancel_btn.configure(command=on_cancel)
     
@@ -725,13 +727,13 @@ def show_complete_screen(app, total_files, total_bytes, restored_browsers, deskt
     app.set_title_subtitle("Import", "Success")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Restoration Complete", subtitle="Welcome to your new PC!")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Restoration Complete", subtitle="Welcome to your new PC!")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, pady=(0, 15))
     
-    success_badge = ctk.CTkLabel(card, text="✓", font=("Segoe UI", 60, "bold"), text_color=SUCCESS_GREEN)
+    success_badge = ctk.CTkLabel(card, text="SUCCESS", font=("Segoe UI", 36, "bold"), text_color=SUCCESS_GREEN)
     success_badge.pack(pady=(20, 5))
     
     title_lbl = ctk.CTkLabel(card, text="Files Restored Successfully!", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
@@ -776,6 +778,7 @@ def show_complete_screen(app, total_files, total_bytes, restored_browsers, deskt
         text="Open Log Report", 
         font=AppFonts.BODY_BOLD, 
         fg_color=BORDER_COLOR, 
+        text_color=TEXT_PRIMARY,
         hover_color=ACCENT_BLUE,
         command=open_log,
         width=150

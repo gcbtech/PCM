@@ -20,7 +20,7 @@ def show_export_welcome_screen(app):
     app.clear_container()
     
     # Header
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Files", subtitle="Let's prepare your files for migration")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Export Files", subtitle="Let's prepare your files for migration")
     header.pack(fill="x")
     
     # Body Card
@@ -70,7 +70,7 @@ def show_export_welcome_screen(app):
             check_vars[profile.username] = var
             chk = ctk.CTkCheckBox(
                 checkbox_frame,
-                text=f"  {profile.username}  —  {profile.path}",
+                text=f"  {profile.username}  -  {profile.path}",
                 variable=var,
                 font=AppFonts.BODY_BOLD,
                 text_color=TEXT_PRIMARY,
@@ -85,7 +85,7 @@ def show_export_welcome_screen(app):
         # Collect checked profiles
         app.selected_profiles = [p for p in app.user_profiles if check_vars.get(p.username, ctk.BooleanVar()).get()]
         if not app.selected_profiles:
-            return  # Nothing selected — ignore
+            return  # Nothing selected - ignore
         app.selected_profile = app.selected_profiles[0]  # backward compat
         show_scanning_loading_screen(app)
         
@@ -105,7 +105,7 @@ def show_export_welcome_screen(app):
     # Manual Mode Switch Override Link
     switch_btn = ctk.CTkButton(
         app.container,
-        text="Already have a PCM drive? Switch to Import Mode →",
+        text="Already have a PCM drive? Switch to Import Mode",
         font=AppFonts.SMALL,
         fg_color="transparent",
         hover=False,
@@ -118,7 +118,7 @@ def show_export_welcome_screen(app):
     from gui.network_view import show_method_selection
     back_btn = ctk.CTkButton(
         app.container,
-        text="← Back to Transfer Method Selection",
+        text="Back to Transfer Method Selection",
         font=AppFonts.SMALL,
         fg_color="transparent",
         hover=False,
@@ -132,7 +132,7 @@ def show_scanning_loading_screen(app):
     app.set_title_subtitle("Export", "Scanning")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Files", subtitle="Scanning files and folders")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Export Files", subtitle="Scanning files and folders")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
@@ -235,7 +235,7 @@ def show_scan_results_screen(app):
     app.set_title_subtitle("Export", "Configure")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Files", subtitle="Configure files and target drive")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Export Files", subtitle="Configure files and target drive")
     header.pack(fill="x")
     
     # Outer frame to arrange folder list and drive selection
@@ -258,6 +258,7 @@ def show_scan_results_screen(app):
         corner_radius=12
     )
     tabview.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    tabview._segmented_button.configure(font=("Segoe UI", 11, "bold"))
     
     tabview.add("Personal Folders")
     tabview.add("Steam Games")
@@ -306,7 +307,7 @@ def show_scan_results_screen(app):
             return
             
         confirm = messagebox.askyesno(
-            "⚠️ PCM Custom Migration Warning",
+            "PCM Custom Migration Warning",
             "You are selecting a folder that is not normally moved by PCM.\n\n"
             "PCM cannot guarantee that manually selected programs will function correctly on the new PC "
             "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
@@ -361,7 +362,7 @@ def show_scan_results_screen(app):
             return
             
         confirm = messagebox.askyesno(
-            "⚠️ PCM Custom Migration Warning",
+            "PCM Custom Migration Warning",
             "You are selecting files that are not normally moved by PCM.\n\n"
             "PCM cannot guarantee that manually selected files/programs will function correctly on the new PC "
             "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
@@ -420,18 +421,18 @@ def show_scan_results_screen(app):
     btn_frame.columnconfigure(1, weight=1)
     
     add_folder_btn = ctk.CTkButton(
-        btn_frame,
-        text="📁 Add Custom Folder",
-        font=AppFonts.BODY_BOLD,
-        fg_color=ACCENT_BLUE,
-        hover_color=ACCENT_BLUE,
-        command=add_custom_folder
-    )
+            btn_frame,
+            text="Add Custom Folder",
+            font=AppFonts.BODY_BOLD,
+            fg_color=ACCENT_BLUE,
+            hover_color=ACCENT_BLUE,
+            command=add_custom_folder
+        )
     add_folder_btn.grid(row=0, column=0, padx=(0, 5), sticky="ew")
     
     add_file_btn = ctk.CTkButton(
         btn_frame,
-        text="📄 Add Custom Files",
+        text="Add Custom Files",
         font=AppFonts.BODY_BOLD,
         fg_color=ACCENT_BLUE,
         hover_color=ACCENT_BLUE,
@@ -520,7 +521,7 @@ def show_scan_results_screen(app):
         total_space = format_bytes(d['total_bytes'])
         letters = d.get('letters', [])
         letters_str = ", ".join(letters) if letters else "No Partitions"
-        return f"Disk {d['disk_index']} ({d['label']}) — {total_space} {d['type_desc']} [{letters_str}]"
+        return f"Disk {d['disk_index']} ({d['label']}) - {total_space} {d['type_desc']} [{letters_str}]"
 
     def scan_drives():
         nonlocal detected_drives
@@ -535,7 +536,8 @@ def show_scan_results_screen(app):
                     values=["No drive detected (Preview Mode)"], 
                     state="disabled",
                     fg_color=BORDER_COLOR,
-                    button_color=BORDER_COLOR
+                    button_color=BORDER_COLOR,
+                    text_color=TEXT_SECONDARY
                 )
             app.selected_drive = None
         else:
@@ -545,7 +547,8 @@ def show_scan_results_screen(app):
                     values=values, 
                     state="normal",
                     fg_color=ACCENT_BLUE,
-                    button_color=ACCENT_BLUE
+                    button_color=ACCENT_BLUE,
+                    text_color="white"
                 )
             app.selected_drive = detected_drives[0]
             
@@ -577,8 +580,10 @@ def show_scan_results_screen(app):
     refresh_btn = ctk.CTkButton(
         drive_sel_frame, 
         text="↻", 
-        width=35, 
+        width=40, 
+        font=("Segoe UI", 14, "bold"),
         fg_color=BORDER_COLOR, 
+        text_color=TEXT_PRIMARY,
         hover_color=ACCENT_BLUE,
         command=scan_drives
     )
@@ -599,13 +604,13 @@ def show_scan_results_screen(app):
         checked_settings = settings_checklist.get_selected_settings()
         checked_apps = appdata_checklist.get_selected_apps()
         if not checked and not checked_games and not app.custom_items and not checked_settings and not checked_apps:
-            warning_lbl.configure(text="⚠️ Select at least one item to move.", text_color=WARNING_YELLOW)
-            start_btn.configure(state="disabled", fg_color=BORDER_COLOR)
+            warning_lbl.configure(text="Select at least one item to move.", text_color=WARNING_YELLOW)
+            start_btn.configure(state="disabled", fg_color=BORDER_COLOR, text_color=TEXT_SECONDARY)
             return
             
         if not app.selected_drive:
-            warning_lbl.configure(text="ℹ️ PREVIEW MODE:\nPlug in a USB drive to export files.\nShowing estimates only.", text_color=ACCENT_BLUE)
-            start_btn.configure(state="disabled", text="Drive Required", fg_color=BORDER_COLOR)
+            warning_lbl.configure(text="PREVIEW MODE:\nPlug in a USB drive to export files.\nShowing estimates only.", text_color=ACCENT_BLUE)
+            start_btn.configure(state="disabled", text="Drive Required", fg_color=BORDER_COLOR, text_color=TEXT_SECONDARY)
             return
             
         # Check capacity
@@ -614,11 +619,11 @@ def show_scan_results_screen(app):
         
         if req_space > total_space:
             size_diff = format_bytes(req_space - total_space)
-            warning_lbl.configure(text=f"❌ NOT ENOUGH SPACE:\nDrive is too small by {size_diff}.", text_color=DANGER_RED)
-            start_btn.configure(state="disabled", text="Drive Too Small", fg_color=BORDER_COLOR)
+            warning_lbl.configure(text=f"NOT ENOUGH SPACE:\nDrive is too small by {size_diff}.", text_color=DANGER_RED)
+            start_btn.configure(state="disabled", text="Drive Too Small", fg_color=BORDER_COLOR, text_color=TEXT_SECONDARY)
         else:
-            warning_lbl.configure(text="✓ Drive is ready.\nFormatting is required.", text_color=SUCCESS_GREEN)
-            start_btn.configure(state="normal", text="Start Migration", fg_color=ACCENT_BLUE)
+            warning_lbl.configure(text="Drive is ready.\nFormatting is required.", text_color=SUCCESS_GREEN)
+            start_btn.configure(state="normal", text="Start Migration", fg_color=ACCENT_BLUE, text_color="white")
  
     def proceed_to_confirm():
         app.selected_folders = folder_checklist.get_selected_folders()
@@ -629,9 +634,10 @@ def show_scan_results_screen(app):
 
     back_btn = ctk.CTkButton(
         drive_card,
-        text="← Back to Welcome",
+        text="Back to Welcome",
         font=AppFonts.BODY_BOLD,
         fg_color=BORDER_COLOR,
+        text_color=TEXT_PRIMARY,
         hover_color=ACCENT_BLUE,
         command=lambda: show_export_welcome_screen(app),
         height=35
@@ -643,6 +649,8 @@ def show_scan_results_screen(app):
         text="Start Migration", 
         font=AppFonts.BODY_BOLD, 
         fg_color=ACCENT_BLUE,
+        text_color="white",
+        text_color_disabled=TEXT_SECONDARY,
         hover_color=ACCENT_BLUE,
         command=proceed_to_confirm,
         height=40
@@ -659,13 +667,13 @@ def show_format_warning_screen(app):
     app.set_title_subtitle("Export", "Warning")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Format Warning", subtitle="Destructive operation confirmation")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Format Warning", subtitle="Destructive operation confirmation")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, pady=(0, 15))
     
-    warn_icon = ctk.CTkLabel(card, text="⚠️", font=("Segoe UI", 48, "normal"), text_color=WARNING_YELLOW)
+    warn_icon = ctk.CTkLabel(card, text="WARNING", font=("Segoe UI", 36, "bold"), text_color=WARNING_YELLOW)
     warn_icon.pack(pady=(20, 10))
     
     title_lbl = ctk.CTkLabel(card, text="WARNING: Drive Formatting Required!", font=AppFonts.HEADING_MEDIUM, text_color=DANGER_RED)
@@ -691,9 +699,9 @@ def show_format_warning_screen(app):
     
     def on_check():
         if chk_var.get() == "on":
-            format_btn.configure(state="normal", fg_color=DANGER_RED, hover_color=DANGER_RED)
+            format_btn.configure(state="normal", fg_color=DANGER_RED, hover_color=DANGER_RED, text_color="white")
         else:
-            format_btn.configure(state="disabled", fg_color=BORDER_COLOR)
+            format_btn.configure(state="disabled", fg_color=BORDER_COLOR, text_color=TEXT_SECONDARY)
 
     chk = ctk.CTkCheckBox(
         card, 
@@ -718,6 +726,7 @@ def show_format_warning_screen(app):
         text="Go Back", 
         font=AppFonts.BODY_BOLD, 
         fg_color=BORDER_COLOR, 
+        text_color=TEXT_PRIMARY,
         hover_color=ACCENT_BLUE,
         command=lambda: show_scan_results_screen(app),
         width=120
@@ -732,6 +741,8 @@ def show_format_warning_screen(app):
         text="Format & Export", 
         font=AppFonts.BODY_BOLD, 
         fg_color=BORDER_COLOR,
+        text_color=TEXT_SECONDARY,
+        text_color_disabled=TEXT_SECONDARY,
         state="disabled",
         command=start_export_thread,
         width=180
@@ -742,7 +753,7 @@ def show_progress_screen(app):
     app.set_title_subtitle("Export", "Progress")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Exporting", subtitle="Moving your files to the transport drive...")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Exporting", subtitle="Moving your files to the transport drive...")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
@@ -758,16 +769,19 @@ def show_progress_screen(app):
     percent_lbl = ctk.CTkLabel(card, text="0% completed (0.00 B / 0.00 B)", font=AppFonts.BODY, text_color=TEXT_SECONDARY)
     percent_lbl.pack(pady=5)
 
-    speed_lbl = ctk.CTkLabel(card, text="Speed: —", font=AppFonts.SMALL, text_color=TEXT_SECONDARY)
+    speed_lbl = ctk.CTkLabel(card, text="Speed: -", font=AppFonts.SMALL, text_color=TEXT_SECONDARY)
     speed_lbl.pack(pady=2)
 
-    eta_lbl = ctk.CTkLabel(card, text="ETA: —", font=AppFonts.SMALL, text_color=TEXT_SECONDARY)
+    eta_lbl = ctk.CTkLabel(card, text="ETA: -", font=AppFonts.SMALL, text_color=TEXT_SECONDARY)
     eta_lbl.pack(pady=2)
+
+    file_eta_lbl = ctk.CTkLabel(card, text="File ETA: -", font=AppFonts.SMALL, text_color=TEXT_SECONDARY)
+    file_eta_lbl.pack(pady=2)
     
     detail_lbl = ctk.CTkLabel(card, text="", font=AppFonts.SMALL, text_color=TEXT_SECONDARY, justify="center")
     detail_lbl.pack(pady=15, padx=20)
     
-    cancel_btn = ctk.CTkButton(card, text="Cancel", font=AppFonts.BODY_BOLD, fg_color=BORDER_COLOR, hover_color=DANGER_RED)
+    cancel_btn = ctk.CTkButton(card, text="Cancel", font=AppFonts.BODY_BOLD, fg_color=BORDER_COLOR, text_color=TEXT_PRIMARY, hover_color=DANGER_RED)
     cancel_btn.pack(side="bottom", pady=25)
     
     # State tracker for cancel
@@ -775,12 +789,22 @@ def show_progress_screen(app):
     
     def on_cancel():
         engine.cancel()
-        cancel_btn.configure(state="disabled", text="Cancelling...")
+        cancel_btn.configure(state="disabled", text="Cancelling...", text_color=TEXT_SECONDARY)
         
     cancel_btn.configure(command=on_cancel)
 
     # Speed / ETA tracking shared state
-    _speed_state = {'last_bytes': 0, 'last_time': time.monotonic()}
+    _speed_state = {
+        'start_time': time.monotonic(),
+        'last_bytes': 0, 
+        'last_time': time.monotonic(),
+        
+        # Current file tracking state
+        'current_file': None,
+        'current_file_size': 0,
+        'current_file_copied': 0,
+        'current_file_start_time': time.monotonic()
+    }
     
     def progress_callback(file_path, bytes_just_copied, total_bytes_copied, total_files_copied):
         total_req = app.migration_size_bytes
@@ -794,25 +818,70 @@ def show_progress_screen(app):
         req_str = format_bytes(total_req)
         filename = os.path.basename(file_path)
 
-        # Compute rolling speed every callback
         now = time.monotonic()
+        
+        # Track current file progress
+        if _speed_state['current_file'] != file_path:
+            _speed_state['current_file'] = file_path
+            try:
+                _speed_state['current_file_size'] = os.path.getsize(file_path)
+            except Exception:
+                _speed_state['current_file_size'] = bytes_just_copied # fallback
+            _speed_state['current_file_copied'] = 0
+            _speed_state['current_file_start_time'] = now
+
+        _speed_state['current_file_copied'] += bytes_just_copied
+
+        # Compute rolling speed every callback
         elapsed = now - _speed_state['last_time']
         delta_bytes = total_bytes_copied - _speed_state['last_bytes']
+        
         if elapsed >= 0.5 and delta_bytes > 0:
+            # Overall average speed from start of transfer makes the ETA highly stable and accurate
+            total_elapsed = now - _speed_state['start_time']
+            overall_speed_bps = total_bytes_copied / total_elapsed if total_elapsed > 0 else 0
+            
+            # Instantaneous speed for the speed label
             speed_bps = delta_bytes / elapsed
             _speed_state['last_bytes'] = total_bytes_copied
             _speed_state['last_time'] = now
+            
             speed_str = f"Speed: {format_bytes(speed_bps)}/s"
-            remaining = total_req - total_bytes_copied
-            eta_secs = remaining / speed_bps if speed_bps > 0 else 0
-            if eta_secs < 60:
-                eta_str = f"ETA: {int(eta_secs)}s"
-            elif eta_secs < 3600:
-                eta_str = f"ETA: {int(eta_secs // 60)}m {int(eta_secs % 60)}s"
+            
+            # Global ETA using stable cumulative average speed
+            if overall_speed_bps > 0:
+                remaining = max(0, total_req - total_bytes_copied)
+                eta_secs = remaining / overall_speed_bps
+                if eta_secs < 60:
+                    eta_str = f"ETA: {int(eta_secs)}s"
+                elif eta_secs < 3600:
+                    eta_str = f"ETA: {int(eta_secs // 60)}m {int(eta_secs % 60)}s"
+                else:
+                    eta_str = f"ETA: {int(eta_secs // 3600)}h {int((eta_secs % 3600) // 60)}m"
             else:
-                eta_str = f"ETA: {int(eta_secs // 3600)}h {int((eta_secs % 3600) // 60)}m"
+                eta_str = "ETA: Estimating..."
+
+            # Current File ETA
+            file_copied = _speed_state['current_file_copied']
+            file_size = _speed_state['current_file_size']
+            file_elapsed = now - _speed_state['current_file_start_time']
+            file_speed_bps = file_copied / file_elapsed if file_elapsed > 0 else 0
+            
+            if file_speed_bps > 0 and file_size > file_copied:
+                file_remaining = file_size - file_copied
+                file_eta_secs = file_remaining / file_speed_bps
+                if file_eta_secs < 60:
+                    file_eta_str = f"File ETA: {int(file_eta_secs)}s"
+                elif file_eta_secs < 3600:
+                    file_eta_str = f"File ETA: {int(file_eta_secs // 60)}m {int(file_eta_secs % 60)}s"
+                else:
+                    file_eta_str = f"File ETA: {int(file_eta_secs // 3600)}h {int((file_eta_secs % 3600) // 60)}m"
+            else:
+                file_eta_str = "File ETA: -"
+
             app.after_idle(lambda ss=speed_str: speed_lbl.configure(text=ss))
             app.after_idle(lambda es=eta_str: eta_lbl.configure(text=es))
+            app.after_idle(lambda fs=file_eta_str: file_eta_lbl.configure(text=fs))
         
         app.after_idle(lambda: progress.set(fraction))
         app.after_idle(lambda: percent_lbl.configure(text=f"{percent}% completed ({curr_str} / {req_str})"))
@@ -1052,13 +1121,13 @@ def show_complete_screen(app, total_files, total_bytes, ejected):
     app.set_title_subtitle("Export", "Success")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Export Complete", subtitle="Everything is ready!")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Export Complete", subtitle="Everything is ready!")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, pady=(0, 15))
     
-    success_badge = ctk.CTkLabel(card, text="✓", font=("Segoe UI", 60, "bold"), text_color=SUCCESS_GREEN)
+    success_badge = ctk.CTkLabel(card, text="SUCCESS", font=("Segoe UI", 36, "bold"), text_color=SUCCESS_GREEN)
     success_badge.pack(pady=(30, 5))
     
     title_lbl = ctk.CTkLabel(card, text="Your PCM Drive is Ready!", font=AppFonts.HEADING_MEDIUM, text_color=TEXT_PRIMARY)
@@ -1099,6 +1168,7 @@ def show_complete_screen(app, total_files, total_bytes, ejected):
         text="Open Log Report", 
         font=AppFonts.BODY_BOLD, 
         fg_color=BORDER_COLOR, 
+        text_color=TEXT_PRIMARY,
         hover_color=ACCENT_BLUE,
         command=open_log,
         width=150
@@ -1120,13 +1190,13 @@ def show_error_screen(app, title, message):
     app.set_title_subtitle("Export", "Error")
     app.clear_container()
     
-    header = HeaderPanel(app.container, title="PCM (PC Mover) — Error", subtitle="Something went wrong")
+    header = HeaderPanel(app.container, title="PCM (PC Mover) - Error", subtitle="Something went wrong")
     header.pack(fill="x")
     
     card = PremiumCard(app.container)
     card.pack(fill="both", expand=True, pady=(0, 15))
     
-    err_icon = ctk.CTkLabel(card, text="❌", font=("Segoe UI", 48, "normal"), text_color=DANGER_RED)
+    err_icon = ctk.CTkLabel(card, text="ERROR", font=("Segoe UI", 36, "bold"), text_color=DANGER_RED)
     err_icon.pack(pady=(45, 10))
     
     title_lbl = ctk.CTkLabel(card, text=title, font=AppFonts.HEADING_MEDIUM, text_color=DANGER_RED)

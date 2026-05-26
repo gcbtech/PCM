@@ -102,9 +102,14 @@ def calculate_item_size(item_path, item_type):
             
     total_size = 0
     try:
+        from utils import should_exclude_file_or_dir
         for root, dirs, files in os.walk(item_path):
+            # Exclude folders early so walk doesn't recurse into them
+            dirs[:] = [d for d in dirs if not should_exclude_file_or_dir(os.path.join(root, d))]
             for f in files:
                 fp = os.path.join(root, f)
+                if should_exclude_file_or_dir(fp):
+                    continue
                 try:
                     # Skip reparse points / symlinks to avoid infinite loops
                     from copy_engine import is_reparse_point

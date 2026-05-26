@@ -3,6 +3,10 @@ import sys
 import subprocess
 import shutil
 
+creationflags = 0
+if sys.platform == 'win32':
+    creationflags = subprocess.CREATE_NO_WINDOW
+
 
 def _get_system_disk_index():
     """Returns the physical disk index that contains the system drive (usually C:\\)."""
@@ -17,7 +21,8 @@ def _get_system_disk_index():
         )
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10,
+            creationflags=creationflags
         )
         if result.returncode == 0 and result.stdout.strip().isdigit():
             return int(result.stdout.strip())
@@ -43,7 +48,8 @@ def _query_partition_info(disk_index):
         )
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=10
+            capture_output=True, text=True, timeout=10,
+            creationflags=creationflags
         )
         if result.returncode != 0:
             return partitions
@@ -114,7 +120,8 @@ def list_removable_drives():
         )
         result = subprocess.run(
             ["powershell", "-NoProfile", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=15
+            capture_output=True, text=True, timeout=15,
+            creationflags=creationflags
         )
 
         if result.returncode != 0 or not result.stdout.strip():
@@ -190,7 +197,7 @@ def format_drive(disk_index, label="PCM", drive_letter=None):
     Args:
         disk_index: Physical disk number (e.g. 1 for \\.\PhysicalDrive1)
         label: Volume label for the new partition (default "PCM")
-        drive_letter: Optional safety check — if provided, refuses to proceed if it
+        drive_letter: Optional safety check - if provided, refuses to proceed if it
                       resolves to the system drive. Not used for the actual format.
 
     Returns:
@@ -220,11 +227,11 @@ def format_drive(disk_index, label="PCM", drive_letter=None):
         label = re.sub(r'[^\w\-]', '_', label)[:32]
 
         # Build diskpart script
-        #   select disk N  — target the physical disk
-        #   clean           — wipe partition table
-        #   create partition primary — single partition using all space
-        #   format fs=ntfs quick label=XXX — quick NTFS format
-        #   assign          — auto-assign the next available drive letter
+        #   select disk N  - target the physical disk
+        #   clean           - wipe partition table
+        #   create partition primary - single partition using all space
+        #   format fs=ntfs quick label=XXX - quick NTFS format
+        #   assign          - auto-assign the next available drive letter
         script_lines = [
             f"select disk {disk_index}",
             "clean",
@@ -248,7 +255,8 @@ def format_drive(disk_index, label="PCM", drive_letter=None):
         # Execute diskpart
         proc = subprocess.run(
             ["diskpart", "/s", script_path],
-            capture_output=True, text=True, timeout=120
+            capture_output=True, text=True, timeout=120,
+            creationflags=creationflags
         )
 
         # Clean up script file
@@ -289,7 +297,8 @@ def format_drive(disk_index, label="PCM", drive_letter=None):
                 )
                 ps_result = subprocess.run(
                     ["powershell", "-NoProfile", "-Command", ps_cmd],
-                    capture_output=True, text=True, timeout=10
+                    capture_output=True, text=True, timeout=10,
+                    creationflags=creationflags
                 )
                 if ps_result.returncode == 0 and ps_result.stdout.strip():
                     new_letter = ps_result.stdout.strip().upper() + ":"
@@ -328,7 +337,8 @@ def eject_drive(drive_letter):
         proc = subprocess.run(
             ["powershell", "-Command", ps_cmd],
             capture_output=True,
-            text=True
+            text=True,
+            creationflags=creationflags
         )
         
         if proc.returncode == 0:
