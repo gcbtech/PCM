@@ -296,3 +296,102 @@ class ScrollableSteamGamesList(ctk.CTkScrollableFrame):
         if self.on_toggle_callback:
             self.on_toggle_callback()
 
+
+class ScrollableCustomItemList(ctk.CTkScrollableFrame):
+    """
+    Scrollable panel showing custom added files/folders for migration.
+    Includes a permanent caution warning at the top and a delete button next to each item.
+    """
+    def __init__(self, master, items_list, remove_item_callback, **kwargs):
+        border_width = kwargs.pop('border_width', 1)
+        corner_radius = kwargs.pop('corner_radius', 12)
+        super().__init__(
+            master, 
+            fg_color=CARD_COLOR, 
+            label_text="Custom Files and Folders",
+            label_font=AppFonts.HEADING_MEDIUM,
+            label_text_color=TEXT_PRIMARY,
+            border_color=BORDER_COLOR,
+            border_width=border_width,
+            corner_radius=corner_radius,
+            **kwargs
+        )
+        self.items_list = items_list
+        self.remove_item_callback = remove_item_callback
+        
+        # 1. Permanent Warning Banner at the top
+        warn_frame = ctk.CTkFrame(self, fg_color="#2A2215", border_color=WARNING_YELLOW, border_width=1, corner_radius=8)
+        warn_frame.pack(fill="x", pady=(2, 10), padx=8)
+        
+        warn_lbl = ctk.CTkLabel(
+            warn_frame,
+            text="⚠️  Caution: Custom items (e.g. from Program Files or other profiles) may rely on Registry entries, "
+                 "drivers, or machine-locked settings. PCM copies files only. Migrate custom programs at your own risk.",
+            font=AppFonts.SMALL,
+            text_color=WARNING_YELLOW,
+            wraplength=380,
+            justify="left"
+        )
+        warn_lbl.pack(padx=10, pady=8, fill="both", expand=True)
+        
+        # 2. Render items list
+        if not items_list:
+            empty_lbl = ctk.CTkLabel(
+                self, 
+                text="No custom files or folders selected.\nUse the buttons below to manually add items.", 
+                font=AppFonts.BODY,
+                text_color=TEXT_SECONDARY,
+                justify="center"
+            )
+            empty_lbl.pack(pady=40)
+            return
+
+        for idx, item in enumerate(items_list):
+            row_frame = ctk.CTkFrame(self, fg_color="transparent")
+            row_frame.pack(fill="x", pady=4, padx=8)
+            
+            # Type icon and path
+            icon = "📁 " if item['type'] == 'folder' else "📄 "
+            
+            # Let's truncate long paths in the middle so the UI remains clean
+            display_path = item['path']
+            if len(display_path) > 42:
+                display_path = display_path[:18] + "..." + display_path[-21:]
+                
+            path_lbl = ctk.CTkLabel(
+                row_frame, 
+                text=f"{icon}{display_path}", 
+                font=AppFonts.BODY_BOLD,
+                text_color=TEXT_PRIMARY,
+                anchor="w"
+            )
+            path_lbl.pack(side="left", anchor="w")
+            
+            # Right-side panel for size details + delete button
+            right_panel = ctk.CTkFrame(row_frame, fg_color="transparent")
+            right_panel.pack(side="right", anchor="e")
+            
+            size_text = "Calculating..." if item.get('calculating') else format_bytes(item['size_bytes'])
+            size_lbl = ctk.CTkLabel(
+                right_panel, 
+                text=size_text, 
+                font=AppFonts.SMALL,
+                text_color=TEXT_SECONDARY
+            )
+            size_lbl.pack(side="left", padx=(0, 10))
+            
+            # Red Remove Button
+            remove_btn = ctk.CTkButton(
+                right_panel,
+                text="🗑️",
+                width=30,
+                height=24,
+                fg_color="transparent",
+                hover_color=DANGER_RED,
+                text_color=DANGER_RED,
+                font=("Segoe UI", 12, "bold"),
+                command=lambda p=item['path']: remove_item_callback(p)
+            )
+            remove_btn.pack(side="right")
+
+

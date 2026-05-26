@@ -31,7 +31,8 @@ class PCMApp(ctk.CTk):
         self.folders_info = {}              # Aggregated folder info for the checklist view
         self.selected_folders = []
         self.migration_size_bytes = 0       # Estimated bytes to transfer (for progress %)
-
+        self.custom_items = []              # Custom files/folders selected manually
+        
         self.selected_drive = None          # Selected removable drive (e.g. {'letter': 'E:', ...})
         self.manifest_data = None           # Read when in import mode
         self.conflict_pref = "replace"      # Default conflict resolution policy

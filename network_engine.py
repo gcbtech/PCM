@@ -360,27 +360,41 @@ class PCMNetworkReceiver:
                 rel_path = file_meta['rel_path']
                 file_size = file_meta['size']
                 category = file_meta.get('category', 'Documents')
-                
                 # Resolve destination folder
-                dst_root = category_dirs.get(category, category_dirs['Documents'])
-                dst_file_path = os.path.join(dst_root, rel_path)
+                if category == 'SteamGames':
+                    import steam_ops
+                    local_steam_path = steam_ops.get_steam_install_path()
+                    if local_steam_path:
+                        dst_root = os.path.join(local_steam_path, "steamapps")
+                    else:
+                        dst_root = os.path.join(target_user_path, 'Desktop', "PCM Restored Steam Games", "steamapps")
+                    dst_file_path = os.path.join(dst_root, rel_path)
+                elif category == 'CustomItems':
+                    dst_file_path = rel_path
+                    dst_root = os.path.dirname(dst_file_path)
+                else:
+                    dst_root = category_dirs.get(category, category_dirs['Documents'])
+                    dst_file_path = os.path.join(dst_root, rel_path)
 
                 # Security: prevent path traversal attacks from malicious senders.
                 # A crafted rel_path like '../../Windows/System32/evil.dll' must be blocked.
-                abs_dst_root = os.path.abspath(dst_root)
-                abs_dst_file = os.path.abspath(dst_file_path)
-                if not abs_dst_file.startswith(abs_dst_root + os.sep):
-                    print(f"[Security] Blocked path traversal attempt: {rel_path!r}")
-                    skip_current = True
-                    log_entries.append({
-                        'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
-                        'status': 'ERROR',
-                        'src': rel_path,
-                        'dst': '(blocked)',
-                        'size': 0,
-                        'error': 'Path traversal attempt blocked'
-                    })
-                else:
+                skip_current = False
+                if category != 'CustomItems':
+                    abs_dst_root = os.path.abspath(dst_root)
+                    abs_dst_file = os.path.abspath(dst_file_path)
+                    if not abs_dst_file.startswith(abs_dst_root + os.sep) and abs_dst_file != abs_dst_root:
+                        print(f"[Security] Blocked path traversal attempt: {rel_path!r}")
+                        skip_current = True
+                        log_entries.append({
+                            'timestamp': time.strftime("%Y-%m-%d %H:%M:%S"),
+                            'status': 'ERROR',
+                            'src': rel_path,
+                            'dst': '(blocked)',
+                            'size': 0,
+                            'error': 'Path traversal attempt blocked'
+                        })
+                
+                if not skip_current:
                     os.makedirs(os.path.dirname(dst_file_path), exist_ok=True)
                 
                 # Handle conflict resolution

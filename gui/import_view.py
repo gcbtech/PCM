@@ -598,6 +598,38 @@ def show_import_progress_screen(app):
                 if os.path.exists(src_common):
                     engine.copy_folder_recursive(src_common, dest_common)
 
+        # Step 2.7: Restore Custom Items
+        custom_items = app.manifest_data.get("custom_items", [])
+        if custom_items and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Restoring Custom Items..."))
+            custom_data_root = os.path.join(pcm_root, "custom_items")
+            
+            for item in custom_items:
+                if engine.cancelled:
+                    break
+                original_path = item['original_path']
+                short_name = item['short_name']
+                item_type = item['type']
+                
+                src_item_path = os.path.join(custom_data_root, short_name)
+                
+                if os.path.exists(src_item_path):
+                    app.after_idle(lambda p=original_path: detail_lbl.configure(text=f"Restoring custom item: {p}..."))
+                    
+                    try:
+                        parent_dir = os.path.dirname(original_path)
+                        os.makedirs(parent_dir, exist_ok=True)
+                    except Exception as e:
+                        print(f"[Import] Error creating parent directory {parent_dir}: {e}")
+                        
+                    try:
+                        if item_type == 'folder':
+                            engine.copy_folder_recursive(src_item_path, original_path)
+                        else:
+                            engine.copy_file_with_conflict_resolution(src_item_path, original_path)
+                    except Exception as e:
+                        print(f"[Import] Exception restoring {original_path}: {e}")
+
         # Step 3: Write logs
         primary_dest = app.user_mappings[0]['dest_profile'] if app.user_mappings else app.selected_profile
         engine.write_log_files(desktop_user_path=primary_dest.path, drive_root_path=app.transport_drive)

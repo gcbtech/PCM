@@ -4,7 +4,7 @@ import threading
 import time
 import customtkinter as ctk
 from gui.components import (
-    PremiumCard, HeaderPanel, ScrollableFolderList, ScrollableSteamGamesList, AppFonts,
+    PremiumCard, HeaderPanel, ScrollableFolderList, ScrollableSteamGamesList, ScrollableCustomItemList, AppFonts,
     ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED,
     BG_COLOR, BORDER_COLOR, CARD_COLOR
 )
@@ -241,6 +241,7 @@ def show_scan_results_screen(app):
     
     tabview.add("Personal Folders")
     tabview.add("Steam Games")
+    tabview.add("Custom Items")
     
     # Grid checklists inside tabs to match the tab frame's default grid geometry manager
     folder_checklist = ScrollableFolderList(tabview.tab("Personal Folders"), app.folders_info, border_width=0, corner_radius=0)
@@ -252,6 +253,159 @@ def show_scan_results_screen(app):
     steam_checklist.grid(row=0, column=0, sticky="nsew")
     tabview.tab("Steam Games").grid_rowconfigure(0, weight=1)
     tabview.tab("Steam Games").grid_columnconfigure(0, weight=1)
+
+    # Setup Custom Items checklist and controls
+    custom_checklist = None
+    
+    def remove_custom_item(path):
+        app.custom_items = [item for item in app.custom_items if item['path'] != path]
+        refresh_custom_items_list()
+        
+    def add_custom_folder():
+        from tkinter import filedialog, messagebox
+        app.update()
+        path = filedialog.askdirectory(title="Select Custom Folder to Migrate")
+        if not path:
+            return
+            
+        path = os.path.normpath(path)
+        if any(item['path'] == path for item in app.custom_items):
+            messagebox.showinfo("Already Added", "This folder has already been added to the custom migration list.")
+            return
+            
+        confirm = messagebox.askyesno(
+            "⚠️ PCM Custom Migration Warning",
+            "You are selecting a folder that is not normally moved by PCM.\n\n"
+            "PCM cannot guarantee that manually selected programs will function correctly on the new PC "
+            "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
+            "Do you understand this risk and wish to proceed?",
+            icon="warning"
+        )
+        if not confirm:
+            return
+            
+        item_entry = {
+            'path': path,
+            'type': 'folder',
+            'size_bytes': 0,
+            'calculating': True
+        }
+        app.custom_items.append(item_entry)
+        refresh_custom_items_list()
+        
+        def calc_worker():
+            total_size = 0
+            try:
+                for root, dirs, files in os.walk(path):
+                    for f in files:
+                        fp = os.path.join(root, f)
+                        try:
+                            total_size += os.path.getsize(fp)
+                        except OSError:
+                            pass
+            except Exception:
+                pass
+            item_entry['size_bytes'] = total_size
+            item_entry['calculating'] = False
+            app.after_idle(refresh_custom_items_list)
+            
+        threading.Thread(target=calc_worker, daemon=True).start()
+
+    def add_custom_files():
+        from tkinter import filedialog, messagebox
+        app.update()
+        files = filedialog.askopenfilenames(title="Select Custom Files to Migrate")
+        if not files:
+            return
+            
+        new_files = []
+        for fp in files:
+            normalized = os.path.normpath(fp)
+            if not any(item['path'] == normalized for item in app.custom_items):
+                new_files.append(normalized)
+                
+        if not new_files:
+            messagebox.showinfo("Already Added", "Selected files have already been added to the custom migration list.")
+            return
+            
+        confirm = messagebox.askyesno(
+            "⚠️ PCM Custom Migration Warning",
+            "You are selecting files that are not normally moved by PCM.\n\n"
+            "PCM cannot guarantee that manually selected files/programs will function correctly on the new PC "
+            "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
+            "Do you understand this risk and wish to proceed?",
+            icon="warning"
+        )
+        if not confirm:
+            return
+            
+        for fp in new_files:
+            item_entry = {
+                'path': fp,
+                'type': 'file',
+                'size_bytes': 0,
+                'calculating': True
+            }
+            app.custom_items.append(item_entry)
+            
+            def calc_file_worker(entry=item_entry, path=fp):
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = 0
+                entry['size_bytes'] = size
+                entry['calculating'] = False
+                app.after_idle(refresh_custom_items_list)
+                
+            threading.Thread(target=calc_file_worker, daemon=True).start()
+            
+        refresh_custom_items_list()
+
+    def refresh_custom_items_list():
+        nonlocal custom_checklist
+        if custom_checklist:
+            custom_checklist.destroy()
+            
+        custom_checklist = ScrollableCustomItemList(
+            tabview.tab("Custom Items"),
+            app.custom_items,
+            remove_item_callback=remove_custom_item,
+            border_width=0,
+            corner_radius=0
+        )
+        custom_checklist.grid(row=0, column=0, sticky="nsew")
+        update_size_estimate()
+
+    # Layout for Custom Items Tab: Checklist in row 0, buttons in row 1
+    tabview.tab("Custom Items").grid_rowconfigure(0, weight=1)
+    tabview.tab("Custom Items").grid_rowconfigure(1, weight=0)
+    tabview.tab("Custom Items").grid_columnconfigure(0, weight=1)
+    
+    # Custom items action buttons
+    btn_frame = ctk.CTkFrame(tabview.tab("Custom Items"), fg_color="transparent")
+    btn_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 10))
+    btn_frame.columnconfigure(0, weight=1)
+    btn_frame.columnconfigure(1, weight=1)
+    
+    add_folder_btn = ctk.CTkButton(
+        btn_frame,
+        text="📁 Add Custom Folder",
+        font=AppFonts.BODY_BOLD,
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        command=add_custom_folder
+    )
+    add_folder_btn.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+    
+    add_file_btn = ctk.CTkButton(
+        btn_frame,
+        text="📄 Add Custom Files",
+        font=AppFonts.BODY_BOLD,
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        command=add_custom_files
+    )
+    add_file_btn.grid(row=0, column=1, padx=(5, 0), sticky="ew")
     
     # Right side: Target drive options Card
     drive_card = PremiumCard(body)
@@ -284,6 +438,10 @@ def show_scan_results_screen(app):
             game = app.steam_games.get(appid)
             if game:
                 total_bytes += game['size_bytes']
+                
+        # Custom items size
+        for item in app.custom_items:
+            total_bytes += item['size_bytes']
                 
         # Buffer of 50MB or 5% overhead for bookmarks + PCM executable
         total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
@@ -384,7 +542,7 @@ def show_scan_results_screen(app):
     def check_drive_suitability():
         checked = folder_checklist.get_selected_folders()
         checked_games = steam_checklist.get_selected_games()
-        if not checked and not checked_games:
+        if not checked and not checked_games and not app.custom_items:
             warning_lbl.configure(text="⚠️ Select at least one item to move.", text_color=WARNING_YELLOW)
             start_btn.configure(state="disabled", fg_color=BORDER_COLOR)
             return
@@ -421,6 +579,9 @@ def show_scan_results_screen(app):
         height=40
     )
     start_btn.pack(side="bottom", fill="x", pady=25, padx=20)
+    
+    # Render the initial custom items list
+    refresh_custom_items_list()
     
     # Trigger initial scan
     scan_drives()
@@ -684,6 +845,38 @@ def show_progress_screen(app):
                         "size_bytes": game['size_bytes']
                     })
 
+        # Copy custom files and folders
+        custom_manifest_data = []
+        if getattr(app, 'custom_items', []) and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Exporting Custom Items..."))
+            custom_data_root = os.path.join(pcm_root, "custom_items")
+            os.makedirs(custom_data_root, exist_ok=True)
+            
+            for idx, item in enumerate(app.custom_items):
+                if engine.cancelled:
+                    break
+                    
+                original_path = item['path']
+                item_type = item['type']
+                
+                # short unique name to prevent MAX_PATH issues
+                short_name = f"folder_{idx}" if item_type == 'folder' else f"file_{idx}"
+                dest_path = os.path.join(custom_data_root, short_name)
+                
+                app.after_idle(lambda p=original_path: detail_lbl.configure(text=f"Copying custom item: {p}..."))
+                
+                if item_type == 'folder':
+                    engine.copy_folder_recursive(original_path, dest_path)
+                else:
+                    engine.copy_file_with_conflict_resolution(original_path, dest_path)
+                    
+                custom_manifest_data.append({
+                    "original_path": original_path,
+                    "type": item_type,
+                    "short_name": short_name,
+                    "size_bytes": item['size_bytes']
+                })
+
         if engine.cancelled:
             app.after_idle(lambda: show_export_welcome_screen(app))
             return
@@ -697,7 +890,8 @@ def show_progress_screen(app):
             source_machine=os.environ.get('COMPUTERNAME', 'SOURCE-PC'),
             source_users=user_manifests,
             total_size_bytes=engine.total_bytes_copied,
-            steam_games=steam_manifest_data
+            steam_games=steam_manifest_data,
+            custom_items=custom_manifest_data
         )
         
         # Step 4: Copy self to drive root

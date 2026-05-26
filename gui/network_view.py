@@ -6,8 +6,9 @@ import time
 import tempfile
 import customtkinter as ctk
 from gui.components import (
-    PremiumCard, HeaderPanel, AppFonts,
-    ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED, BORDER_COLOR, CARD_COLOR
+    PremiumCard, HeaderPanel, AppFonts, ScrollableFolderList, ScrollableSteamGamesList, ScrollableCustomItemList,
+    ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED, BORDER_COLOR, CARD_COLOR,
+    BG_COLOR
 )
 import scanner
 import bookmarks
@@ -495,6 +496,11 @@ def show_network_sender_scanning(app):
         try:
             # Scan profile folders
             app.folders_info = scanner.scan_profile_folders(app.selected_profile.path)
+            
+            # Detect Steam games
+            import steam_ops
+            app.steam_games = steam_ops.detect_steam_games()
+            
             app.after(500, lambda: show_network_sender_checklist(app))
         except Exception as e:
             app.after(0, lambda: show_network_error(app, f"Error scanning user folders: {e}"))
@@ -517,15 +523,193 @@ def show_network_sender_checklist(app):
     body = ctk.CTkFrame(app.container, fg_color="transparent")
     body.pack(fill="both", expand=True, pady=(0, 10))
 
-    body.columnconfigure(0, weight=3) # Folder List
+    body.columnconfigure(0, weight=3) # Tabbed Checklist
     body.columnconfigure(1, weight=2) # Details Panel
+    body.rowconfigure(0, weight=1)
 
-    # Left side: ScrollableFolderList
-    from gui.components import ScrollableFolderList
-    folder_checklist = ScrollableFolderList(body, app.folders_info)
-    folder_checklist.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+    # Left side: CTkTabview for Folder, Steam, and Custom checklists
+    tabview = ctk.CTkTabview(
+        body, 
+        fg_color=CARD_COLOR,
+        segmented_button_selected_color=ACCENT_BLUE,
+        segmented_button_selected_hover_color=ACCENT_BLUE,
+        segmented_button_unselected_hover_color=BG_COLOR,
+        border_color=BORDER_COLOR,
+        border_width=1,
+        corner_radius=12
+    )
+    tabview.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
 
-    # Right side: Summary Card
+    tabview.add("Personal Folders")
+    tabview.add("Steam Games")
+    tabview.add("Custom Items")
+
+    # Personal folders checklist
+    folder_checklist = ScrollableFolderList(tabview.tab("Personal Folders"), app.folders_info, border_width=0, corner_radius=0)
+    folder_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("Personal Folders").grid_rowconfigure(0, weight=1)
+    tabview.tab("Personal Folders").grid_columnconfigure(0, weight=1)
+
+    # Steam games checklist
+    steam_checklist = ScrollableSteamGamesList(tabview.tab("Steam Games"), getattr(app, 'steam_games', {}), border_width=0, corner_radius=0)
+    steam_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("Steam Games").grid_rowconfigure(0, weight=1)
+    tabview.tab("Steam Games").grid_columnconfigure(0, weight=1)
+
+    # Custom items checklist
+    custom_checklist = None
+
+    def remove_custom_item(path):
+        app.custom_items = [item for item in app.custom_items if item['path'] != path]
+        refresh_custom_items_list()
+
+    def add_custom_folder():
+        from tkinter import filedialog, messagebox
+        app.update()
+        path = filedialog.askdirectory(title="Select Custom Folder to Migrate")
+        if not path:
+            return
+            
+        path = os.path.normpath(path)
+        if any(item['path'] == path for item in app.custom_items):
+            messagebox.showinfo("Already Added", "This folder has already been added to the custom migration list.")
+            return
+            
+        confirm = messagebox.askyesno(
+            "⚠️ PCM Custom Migration Warning",
+            "You are selecting a folder that is not normally moved by PCM.\n\n"
+            "PCM cannot guarantee that manually selected programs will function correctly on the new PC "
+            "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
+            "Do you understand this risk and wish to proceed?",
+            icon="warning"
+        )
+        if not confirm:
+            return
+            
+        item_entry = {
+            'path': path,
+            'type': 'folder',
+            'size_bytes': 0,
+            'calculating': True
+        }
+        app.custom_items.append(item_entry)
+        refresh_custom_items_list()
+        
+        def calc_worker():
+            total_size = 0
+            try:
+                for root, dirs, files in os.walk(path):
+                    for f in files:
+                        fp = os.path.join(root, f)
+                        try:
+                            total_size += os.path.getsize(fp)
+                        except OSError:
+                            pass
+            except Exception:
+                pass
+            item_entry['size_bytes'] = total_size
+            item_entry['calculating'] = False
+            app.after_idle(refresh_custom_items_list)
+            
+        threading.Thread(target=calc_worker, daemon=True).start()
+
+    def add_custom_files():
+        from tkinter import filedialog, messagebox
+        app.update()
+        files = filedialog.askopenfilenames(title="Select Custom Files to Migrate")
+        if not files:
+            return
+            
+        new_files = []
+        for fp in files:
+            normalized = os.path.normpath(fp)
+            if not any(item['path'] == normalized for item in app.custom_items):
+                new_files.append(normalized)
+                
+        if not new_files:
+            messagebox.showinfo("Already Added", "Selected files have already been added to the custom migration list.")
+            return
+            
+        confirm = messagebox.askyesno(
+            "⚠️ PCM Custom Migration Warning",
+            "You are selecting files that are not normally moved by PCM.\n\n"
+            "PCM cannot guarantee that manually selected files/programs will function correctly on the new PC "
+            "because they often depend on registry entries, user keys, and drivers that are not selected.\n\n"
+            "Do you understand this risk and wish to proceed?",
+            icon="warning"
+        )
+        if not confirm:
+            return
+            
+        for fp in new_files:
+            item_entry = {
+                'path': fp,
+                'type': 'file',
+                'size_bytes': 0,
+                'calculating': True
+            }
+            app.custom_items.append(item_entry)
+            
+            def calc_file_worker(entry=item_entry, path=fp):
+                try:
+                    size = os.path.getsize(path)
+                except OSError:
+                    size = 0
+                entry['size_bytes'] = size
+                entry['calculating'] = False
+                app.after_idle(refresh_custom_items_list)
+                
+            threading.Thread(target=calc_file_worker, daemon=True).start()
+            
+        refresh_custom_items_list()
+
+    def refresh_custom_items_list():
+        nonlocal custom_checklist
+        if custom_checklist:
+            custom_checklist.destroy()
+            
+        custom_checklist = ScrollableCustomItemList(
+            tabview.tab("Custom Items"),
+            app.custom_items,
+            remove_item_callback=remove_custom_item,
+            border_width=0,
+            corner_radius=0
+        )
+        custom_checklist.grid(row=0, column=0, sticky="nsew")
+        update_size_estimate()
+
+    # Layout for Custom Items Tab: Checklist in row 0, buttons in row 1
+    tabview.tab("Custom Items").grid_rowconfigure(0, weight=1)
+    tabview.tab("Custom Items").grid_rowconfigure(1, weight=0)
+    tabview.tab("Custom Items").grid_columnconfigure(0, weight=1)
+
+    # Custom items action buttons
+    btn_frame = ctk.CTkFrame(tabview.tab("Custom Items"), fg_color="transparent")
+    btn_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 10))
+    btn_frame.columnconfigure(0, weight=1)
+    btn_frame.columnconfigure(1, weight=1)
+    
+    add_folder_btn = ctk.CTkButton(
+        btn_frame,
+        text="📁 Add Custom Folder",
+        font=AppFonts.BODY_BOLD,
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        command=add_custom_folder
+    )
+    add_folder_btn.grid(row=0, column=0, padx=(0, 5), sticky="ew")
+    
+    add_file_btn = ctk.CTkButton(
+        btn_frame,
+        text="📄 Add Custom Files",
+        font=AppFonts.BODY_BOLD,
+        fg_color=ACCENT_BLUE,
+        hover_color=ACCENT_BLUE,
+        command=add_custom_files
+    )
+    add_file_btn.grid(row=0, column=1, padx=(5, 0), sticky="ew")
+
+    # Right side: Details Panel Summary Card
     summary_card = PremiumCard(body)
     summary_card.grid(row=0, column=1, sticky="nsew")
     
@@ -542,6 +726,18 @@ def show_network_sender_checklist(app):
             info = app.folders_info.get(name)
             if info:
                 total_bytes += info.size_bytes
+                
+        # Steam games
+        selected_games = steam_checklist.get_selected_games()
+        for appid in selected_games:
+            game = app.steam_games.get(appid)
+            if game:
+                total_bytes += game['size_bytes']
+                
+        # Custom items
+        for item in app.custom_items:
+            total_bytes += item['size_bytes']
+            
         total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
         size_str = format_bytes(total_bytes)
         size_summary_lbl.configure(text=f"Estimate Required:\n{size_str}")
@@ -549,11 +745,19 @@ def show_network_sender_checklist(app):
     # Hook checkbox toggles
     for item in folder_checklist.checkboxes.values():
         item['checkbox'].configure(command=update_size_estimate)
+        
+    for item in steam_checklist.checkboxes.values():
+        item['checkbox'].configure(command=update_size_estimate)
 
-    update_size_estimate()
+    folder_checklist.on_toggle_callback = update_size_estimate
+    steam_checklist.on_toggle_callback = update_size_estimate
+
+    # Call initial list refresh AFTER size_summary_lbl is constructed!
+    refresh_custom_items_list()
 
     def proceed():
         app.selected_folders = folder_checklist.get_selected_folders()
+        app.selected_games = steam_checklist.get_selected_games()
         show_network_sender_connection(app)
 
     next_btn = ctk.CTkButton(
@@ -566,7 +770,6 @@ def show_network_sender_checklist(app):
     )
     next_btn.pack(side="bottom", pady=25)
 
-    body.rowconfigure(0, weight=1)
 
 def show_network_sender_connection(app):
     """
@@ -693,6 +896,71 @@ def initiate_network_sender(app, code, receiver_ip=None):
                             })
                         except Exception:
                             pass
+
+        # Enumerate Steam Games
+        selected_games = getattr(app, 'selected_games', [])
+        for appid in selected_games:
+            game = getattr(app, 'steam_games', {}).get(appid)
+            if game:
+                # 1. ACF manifest file
+                acf_path = game['manifest_path']
+                if os.path.exists(acf_path):
+                    files_to_send.append({
+                        'src_path': acf_path,
+                        'rel_path': os.path.basename(acf_path),
+                        'size': os.path.getsize(acf_path),
+                        'category': 'SteamGames'
+                    })
+                # 2. Game files in common
+                common_dir = game['common_path']
+                if os.path.exists(common_dir):
+                    for root, dirs, files in os.walk(common_dir):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            try:
+                                from copy_engine import is_reparse_point
+                                if is_reparse_point(file_path):
+                                    continue
+                                file_size = os.path.getsize(file_path)
+                                rel_path = os.path.join("common", game['installdir'], os.path.relpath(file_path, common_dir))
+                                files_to_send.append({
+                                    'src_path': file_path,
+                                    'rel_path': rel_path,
+                                    'size': file_size,
+                                    'category': 'SteamGames'
+                                })
+                            except Exception:
+                                pass
+
+        # Enumerate Custom Items
+        for item in getattr(app, 'custom_items', []):
+            item_path = item['path']
+            item_type = item['type']
+            if os.path.exists(item_path):
+                if item_type == 'file':
+                    files_to_send.append({
+                        'src_path': item_path,
+                        'rel_path': item_path,
+                        'size': os.path.getsize(item_path),
+                        'category': 'CustomItems'
+                    })
+                else: # folder
+                    for root, dirs, files in os.walk(item_path):
+                        for file in files:
+                            file_path = os.path.join(root, file)
+                            try:
+                                from copy_engine import is_reparse_point
+                                if is_reparse_point(file_path):
+                                    continue
+                                file_size = os.path.getsize(file_path)
+                                files_to_send.append({
+                                    'src_path': file_path,
+                                    'rel_path': file_path,
+                                    'size': file_size,
+                                    'category': 'CustomItems'
+                                })
+                            except Exception:
+                                pass
 
         # Always export browser bookmarks alongside file folders
         try:
