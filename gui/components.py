@@ -395,3 +395,188 @@ class ScrollableCustomItemList(ctk.CTkScrollableFrame):
             remove_btn.pack(side="right")
 
 
+class ScrollableSettingsList(ctk.CTkScrollableFrame):
+    """
+    Scrollable checklist for Windows Settings (Personalization & Wi-Fi Profiles).
+    """
+    def __init__(self, master, **kwargs):
+        border_width = kwargs.pop('border_width', 1)
+        corner_radius = kwargs.pop('corner_radius', 12)
+        super().__init__(
+            master, 
+            fg_color=CARD_COLOR, 
+            label_text="Select Windows Settings to Migrate",
+            label_font=AppFonts.HEADING_MEDIUM,
+            label_text_color=TEXT_PRIMARY,
+            border_color=BORDER_COLOR,
+            border_width=border_width,
+            corner_radius=corner_radius,
+            **kwargs
+        )
+        self.checkboxes = {}
+        self.on_toggle_callback = None
+        
+        settings_items = {
+            "Windows Personalization Settings": "Captures wallpaper, theme choice, cursor sizes, colors",
+            "Wi-Fi Network Profiles": "Copies saved Wi-Fi SSIDs and XML credentials silently"
+        }
+        
+        for name, desc in settings_items.items():
+            row_frame = ctk.CTkFrame(self, fg_color="transparent")
+            row_frame.pack(fill="x", pady=6, padx=8)
+            
+            var = ctk.StringVar(value="on")
+            cb = ctk.CTkCheckBox(
+                row_frame, 
+                text=name, 
+                font=AppFonts.BODY_BOLD,
+                text_color=TEXT_PRIMARY,
+                variable=var,
+                onvalue="on",
+                offvalue="off",
+                checkmark_color=TEXT_PRIMARY,
+                fg_color=ACCENT_BLUE,
+                hover_color=ACCENT_BLUE,
+                command=self.on_cb_toggle
+            )
+            cb.pack(side="left", anchor="w")
+            
+            self.checkboxes[name] = {
+                'var': var,
+                'checkbox': cb,
+                'size_bytes': 102400 if "Personalization" in name else 20480
+            }
+            
+            details_lbl = ctk.CTkLabel(
+                row_frame, 
+                text=desc, 
+                font=AppFonts.SMALL,
+                text_color=TEXT_SECONDARY,
+                wraplength=200,
+                justify="right"
+            )
+            details_lbl.pack(side="right", anchor="e", padx=(10, 0))
+
+    def on_cb_toggle(self):
+        if self.on_toggle_callback:
+            self.on_toggle_callback()
+
+    def get_selected_settings(self):
+        selected = []
+        for name, data in self.checkboxes.items():
+            if data['var'].get() == "on":
+                selected.append(name)
+        return selected
+
+
+class ScrollableAppDataList(ctk.CTkScrollableFrame):
+    """
+    Scrollable checklist containing AppData preferences with sizes.
+    """
+    def __init__(self, master, appdata_dict, **kwargs):
+        border_width = kwargs.pop('border_width', 1)
+        corner_radius = kwargs.pop('corner_radius', 12)
+        super().__init__(
+            master, 
+            fg_color=CARD_COLOR, 
+            label_text="Select AppData Settings to Migrate",
+            label_font=AppFonts.HEADING_MEDIUM,
+            label_text_color=TEXT_PRIMARY,
+            border_color=BORDER_COLOR,
+            border_width=border_width,
+            corner_radius=corner_radius,
+            **kwargs
+        )
+        self.checkboxes = {}
+        self.on_toggle_callback = None
+        
+        # Add Select All row if there are items
+        if appdata_dict:
+            sel_all_frame = ctk.CTkFrame(self, fg_color="transparent")
+            sel_all_frame.pack(fill="x", pady=(2, 6), padx=8)
+            
+            any_exists = any(info.exists for info in appdata_dict.values())
+            self.select_all_var = ctk.StringVar(value="on" if any_exists else "off")
+            
+            self.select_all_cb = ctk.CTkCheckBox(
+                sel_all_frame,
+                text="Select All / Deselect All",
+                font=AppFonts.BODY_BOLD,
+                text_color=ACCENT_BLUE,
+                variable=self.select_all_var,
+                onvalue="on",
+                offvalue="off",
+                checkmark_color=TEXT_PRIMARY,
+                fg_color=ACCENT_BLUE,
+                hover_color=ACCENT_BLUE,
+                command=self.toggle_all
+            )
+            self.select_all_cb.pack(side="left", anchor="w")
+            
+            # Simple divider
+            div = ctk.CTkFrame(self, height=1, fg_color=BORDER_COLOR)
+            div.pack(fill="x", pady=(0, 6), padx=8)
+            
+        for idx, (name, app_info) in enumerate(appdata_dict.items()):
+            row_frame = ctk.CTkFrame(self, fg_color="transparent")
+            row_frame.pack(fill="x", pady=4, padx=8)
+            
+            # Checkbox
+            var = ctk.StringVar(value="on" if app_info.exists else "off")
+            cb = ctk.CTkCheckBox(
+                row_frame, 
+                text=name, 
+                font=AppFonts.BODY_BOLD,
+                text_color=TEXT_PRIMARY,
+                variable=var,
+                onvalue="on",
+                offvalue="off",
+                state="normal" if app_info.exists else "disabled",
+                checkmark_color=TEXT_PRIMARY,
+                fg_color=ACCENT_BLUE,
+                hover_color=ACCENT_BLUE,
+                command=self.on_cb_toggle
+            )
+            cb.pack(side="left", anchor="w")
+            
+            self.checkboxes[name] = {
+                'var': var,
+                'checkbox': cb,
+                'info': app_info
+            }
+            
+            if app_info.exists:
+                desc = app_info.get_friendly_size()
+                text_color = TEXT_PRIMARY
+            else:
+                desc = "Not installed / not found"
+                text_color = TEXT_SECONDARY
+                
+            details_lbl = ctk.CTkLabel(
+                row_frame, 
+                text=desc, 
+                font=AppFonts.SMALL,
+                text_color=text_color
+            )
+            details_lbl.pack(side="right", anchor="e", padx=(10, 0))
+
+    def on_cb_toggle(self):
+        if self.on_toggle_callback:
+            self.on_toggle_callback()
+
+    def get_selected_apps(self):
+        selected = []
+        for name, data in self.checkboxes.items():
+            if data['var'].get() == "on":
+                selected.append(name)
+        return selected
+
+    def toggle_all(self):
+        val = self.select_all_var.get()
+        for name, data in self.checkboxes.items():
+            if data['checkbox'].cget('state') == 'normal':
+                data['var'].set(val)
+        if self.on_toggle_callback:
+            self.on_toggle_callback()
+
+

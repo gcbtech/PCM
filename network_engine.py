@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 import datetime
+import zlib
 
 # Protocol Ports
 PORT_TCP = 58291
@@ -274,6 +275,12 @@ class PCMNetworkReceiver:
             print(f"[Network] Connection from: {addr}")
             self.beacon_active = False # Stop beacon once connection is received
 
+            try:
+                conn.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2097152)
+                conn.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2097152)
+            except Exception as e:
+                print(f"[Network] Error setting receiver socket buffer: {e}")
+
             # Wrap with SSL
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
             context.load_cert_chain(certfile=self.cert_path, keyfile=self.key_path)
@@ -334,7 +341,9 @@ class PCMNetworkReceiver:
                 'Pictures': os.path.join(target_user_path, 'Pictures'),
                 'Videos': os.path.join(target_user_path, 'Videos'),
                 'Music': os.path.join(target_user_path, 'Music'),
-                'Bookmarks': os.path.join(target_user_path, 'AppData', 'Local', 'PCM_Bookmarks_Temp') # Temporary path for incoming bookmarks
+                'Bookmarks': os.path.join(target_user_path, 'AppData', 'Local', 'PCM_Bookmarks_Temp'),
+                'Settings': os.path.join(target_user_path, 'AppData', 'Local', 'PCM_Settings_Temp'),
+                'AppData': os.path.join(target_user_path, 'AppData', 'Local', 'PCM_AppData_Temp')
             }
 
             from copy_engine import get_unique_path
@@ -439,12 +448,24 @@ class PCMNetworkReceiver:
                     elif chunk_cmd != CMD_FILE_CHUNK:
                         raise ValueError(f"Expected CMD_FILE_CHUNK or CMD_FILE_END, got: {chunk_cmd}")
                     
+                    if len(chunk_payload) > 0:
+                        is_compressed = chunk_payload[0] == 1
+                        data = chunk_payload[1:]
+                        if is_compressed:
+                            try:
+                                data = zlib.decompress(data)
+                            except Exception as e:
+                                print(f"[Network] zlib decompress error: {e}")
+                                # keep data as is if decompress fails (fallback)
+                    else:
+                        data = b""
+
                     if not skip_current and fdst:
-                        fdst.write(chunk_payload)
+                        fdst.write(data)
                     
-                    file_bytes_read += len(chunk_payload)
-                    total_bytes_written += len(chunk_payload)
-                    self.progress_cb(rel_path, len(chunk_payload), files_processed, manifest_data['total_files'])
+                    file_bytes_read += len(data)
+                    total_bytes_written += len(data)
+                    self.progress_cb(rel_path, len(data), files_processed, manifest_data['total_files'])
 
                 if fdst:
                     fdst.close()
@@ -478,6 +499,53 @@ class PCMNetworkReceiver:
                 try:
                     import shutil
                     shutil.rmtree(bookmarks_temp_path)
+                except Exception:
+                    pass
+
+            # 8.2 Restore Windows Settings
+            settings_temp_path = category_dirs['Settings']
+            if os.path.exists(settings_temp_path):
+                print("[Network] Restoring settings locally...")
+                import settings_ops
+                try:
+                    settings_ops.restore_personalization_settings(settings_temp_path)
+                    settings_ops.restore_wifi_profiles(settings_temp_path)
+                except Exception as e:
+                    print(f"[Network] Settings restore error: {e}")
+                try:
+                    import shutil
+                    shutil.rmtree(settings_temp_path)
+                except Exception:
+                    pass
+
+            # 8.4 Restore AppData Preferences
+            appdata_temp_path = category_dirs['AppData']
+            if os.path.exists(appdata_temp_path):
+                print("[Network] Restoring AppData preferences locally...")
+                from appdata_scanner import get_appdata_definitions
+                try:
+                    dest_definitions = get_appdata_definitions(target_user_path)
+                    for app_name, items in dest_definitions.items():
+                        for item in items:
+                            rel_path = item["rel_path"]
+                            src_path = os.path.join(appdata_temp_path, rel_path)
+                            if os.path.exists(src_path):
+                                target_path = item["path"]
+                                try:
+                                    from copy_engine import CopyEngine
+                                    ce = CopyEngine(conflict_pref=conflict_pref)
+                                    if item["type"] == "folder":
+                                        ce.copy_folder_recursive(src_path, target_path)
+                                    else:
+                                        os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                                        ce.copy_file_with_conflict_resolution(src_path, target_path)
+                                except Exception as e:
+                                    print(f"[Network] AppData restore error for {rel_path}: {e}")
+                except Exception as e:
+                    print(f"[Network] AppData restore aggregation error: {e}")
+                try:
+                    import shutil
+                    shutil.rmtree(appdata_temp_path)
                 except Exception:
                     pass
 
@@ -599,6 +667,11 @@ class PCMNetworkSender:
             # 2. Connect to Receiver
             print(f"[Network] Connecting to {receiver_ip}:{PORT_TCP}...")
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 2097152)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2097152)
+            except Exception as e:
+                print(f"[Network] Error setting sender socket buffer: {e}")
             sock.settimeout(10.0)
             sock.connect((receiver_ip, PORT_TCP))
             sock.settimeout(None) # Reset timeout for streaming
@@ -666,6 +739,7 @@ class PCMNetworkSender:
 
                 # Stream chunks
                 bytes_sent_for_file = 0
+                is_text_heavy = category in ['Documents', 'Bookmarks', 'CustomItems', 'AppData', 'Settings', 'Desktop']
                 if os.path.exists(src_path) and os.path.isfile(src_path):
                     try:
                         with open(src_path, 'rb') as f:
@@ -673,7 +747,12 @@ class PCMNetworkSender:
                                 chunk = f.read(65536) # 64KB buffer
                                 if not chunk:
                                     break
-                                send_frame(self.ssl_sock, CMD_FILE_CHUNK, chunk)
+                                if is_text_heavy:
+                                    compressed = zlib.compress(chunk)
+                                    payload = b'\x01' + compressed
+                                else:
+                                    payload = b'\x00' + chunk
+                                send_frame(self.ssl_sock, CMD_FILE_CHUNK, payload)
                                 bytes_sent_for_file += len(chunk)
                                 total_bytes_sent += len(chunk)
                                 self.progress_cb(rel_path, len(chunk), files_processed, total_files)

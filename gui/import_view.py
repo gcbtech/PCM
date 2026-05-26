@@ -553,6 +553,65 @@ def show_import_progress_screen(app):
                 src_bookmarks = os.path.join(pcm_root, "_pcm_bookmarks")
             bookmarks.import_browser_bookmarks(src_bookmarks, dest_profile.path)
 
+        # Step 2.2: Restore Windows Settings (system-wide)
+        selected_settings = app.manifest_data.get("settings", [])
+        if selected_settings and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Restoring Windows Settings..."))
+            import settings_ops
+            
+            # Personalization Settings
+            if "Windows Personalization Settings" in selected_settings:
+                app.after_idle(lambda: detail_lbl.configure(text="Restoring Personalization Registry keys..."))
+                settings_src = os.path.join(pcm_root, "settings")
+                settings_ops.restore_personalization_settings(settings_src)
+                
+            # Wi-Fi Networks
+            if "Wi-Fi Network Profiles" in selected_settings:
+                app.after_idle(lambda: detail_lbl.configure(text="Adding Wi-Fi XML profiles..."))
+                settings_src = os.path.join(pcm_root, "settings")
+                settings_ops.restore_wifi_profiles(settings_src)
+
+        # Step 2.4: Restore AppData Preferences (for each mapped user profile)
+        selected_apps = app.manifest_data.get("appdata", [])
+        if selected_apps and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Restoring AppData Preferences..."))
+            from appdata_scanner import get_appdata_definitions
+            
+            for mapping in app.user_mappings:
+                if engine.cancelled:
+                    break
+                src_username = mapping['src_username']
+                dest_profile = mapping['dest_profile']
+                dest_user_path = dest_profile.path
+                
+                dest_definitions = get_appdata_definitions(dest_user_path)
+                
+                for app_name in selected_apps:
+                    if engine.cancelled:
+                        break
+                        
+                    app.after_idle(lambda a=app_name, u=dest_profile.username:
+                                   detail_lbl.configure(text=f"Restoring {a} for {u}..."))
+                                   
+                    items_to_restore = dest_definitions.get(app_name, [])
+                    for item in items_to_restore:
+                        if engine.cancelled:
+                            break
+                        rel_path = item["rel_path"]
+                        target_path = item["path"]
+                        
+                        src_path = os.path.join(pcm_root, src_username, "appdata", rel_path)
+                        
+                        if os.path.exists(src_path):
+                            try:
+                                if item["type"] == "folder":
+                                    engine.copy_folder_recursive(src_path, target_path)
+                                else:
+                                    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+                                    engine.copy_file_with_conflict_resolution(src_path, target_path)
+                            except Exception as e:
+                                print(f"[Import] Error restoring {rel_path}: {e}")
+
         # Step 2.5: Restore Steam Games
         steam_games = app.manifest_data.get("steam_games", [])
         if steam_games and not engine.cancelled:

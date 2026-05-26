@@ -3,9 +3,9 @@ import json
 import time
 
 MANIFEST_FILENAME = "manifest.json"
-CURRENT_VERSION = "1.4"
+CURRENT_VERSION = "1.5"
 
-def create_manifest(drive_path, source_machine, source_users, total_size_bytes, steam_games=None, custom_items=None):
+def create_manifest(drive_path, source_machine, source_users, total_size_bytes, steam_games=None, custom_items=None, settings=None, appdata=None):
     """
     Writes manifest.json to the root of drive_path.
     
@@ -34,6 +34,12 @@ def create_manifest(drive_path, source_machine, source_users, total_size_bytes, 
         
     if custom_items:
         data["custom_items"] = custom_items
+
+    if settings:
+        data["settings"] = settings
+
+    if appdata:
+        data["appdata"] = appdata
     
     try:
         with open(manifest_path, 'w', encoding='utf-8') as f:

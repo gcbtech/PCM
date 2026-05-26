@@ -6,7 +6,7 @@ import customtkinter as ctk
 from gui.components import (
     PremiumCard, HeaderPanel, ScrollableFolderList, ScrollableSteamGamesList, ScrollableCustomItemList, AppFonts,
     ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED,
-    BG_COLOR, BORDER_COLOR, CARD_COLOR
+    BG_COLOR, BORDER_COLOR, CARD_COLOR, ScrollableSettingsList, ScrollableAppDataList
 )
 import scanner
 import drive_ops
@@ -180,6 +180,26 @@ def show_scanning_loading_screen(app):
                             merged[fname].exists = True
             app.folders_info = merged
             
+            # Scan and aggregate AppData
+            from appdata_scanner import scan_profile_appdata, AppDataInfo
+            app.all_users_appdata_info = {}
+            for profile in app.selected_profiles:
+                app.after_idle(lambda u=profile.username: update_status(f"Scanning AppData for {u}..."))
+                ad = scan_profile_appdata(profile.path, status_callback=update_status)
+                app.all_users_appdata_info[profile.username] = ad
+                
+            merged_appdata = {}
+            for username, ad_dict in app.all_users_appdata_info.items():
+                for app_name, info in ad_dict.items():
+                    if app_name not in merged_appdata:
+                        merged_appdata[app_name] = AppDataInfo(app_name, info.exists, info.size_bytes, info.items.copy())
+                    else:
+                        merged_appdata[app_name].size_bytes += info.size_bytes
+                        if info.exists and not merged_appdata[app_name].exists:
+                            merged_appdata[app_name].exists = True
+                        merged_appdata[app_name].items.extend(info.items)
+            app.appdata_info = merged_appdata
+
             # Detect Steam games
             import steam_ops
             app.after_idle(lambda: update_status("Detecting Steam games..."))
@@ -241,6 +261,8 @@ def show_scan_results_screen(app):
     
     tabview.add("Personal Folders")
     tabview.add("Steam Games")
+    tabview.add("Windows Settings")
+    tabview.add("AppData Preferences")
     tabview.add("Custom Items")
     
     # Grid checklists inside tabs to match the tab frame's default grid geometry manager
@@ -253,6 +275,16 @@ def show_scan_results_screen(app):
     steam_checklist.grid(row=0, column=0, sticky="nsew")
     tabview.tab("Steam Games").grid_rowconfigure(0, weight=1)
     tabview.tab("Steam Games").grid_columnconfigure(0, weight=1)
+
+    settings_checklist = ScrollableSettingsList(tabview.tab("Windows Settings"), border_width=0, corner_radius=0)
+    settings_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("Windows Settings").grid_rowconfigure(0, weight=1)
+    tabview.tab("Windows Settings").grid_columnconfigure(0, weight=1)
+
+    appdata_checklist = ScrollableAppDataList(tabview.tab("AppData Preferences"), getattr(app, 'appdata_info', {}), border_width=0, corner_radius=0)
+    appdata_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("AppData Preferences").grid_rowconfigure(0, weight=1)
+    tabview.tab("AppData Preferences").grid_columnconfigure(0, weight=1)
 
     # Setup Custom Items checklist and controls
     custom_checklist = None
@@ -442,6 +474,20 @@ def show_scan_results_screen(app):
         # Custom items size
         for item in app.custom_items:
             total_bytes += item['size_bytes']
+
+        # Settings size
+        selected_settings = settings_checklist.get_selected_settings()
+        for name in selected_settings:
+            data = settings_checklist.checkboxes.get(name)
+            if data:
+                total_bytes += data['size_bytes']
+
+        # AppData size
+        selected_apps = appdata_checklist.get_selected_apps()
+        for name in selected_apps:
+            info = app.appdata_info.get(name)
+            if info:
+                total_bytes += info.size_bytes
                 
         # Buffer of 50MB or 5% overhead for bookmarks + PCM executable
         total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
@@ -457,9 +503,17 @@ def show_scan_results_screen(app):
         
     for item in steam_checklist.checkboxes.values():
         item['checkbox'].configure(command=update_size_estimate)
+
+    for item in settings_checklist.checkboxes.values():
+        item['checkbox'].configure(command=update_size_estimate)
+
+    for item in appdata_checklist.checkboxes.values():
+        item['checkbox'].configure(command=update_size_estimate)
         
     folder_checklist.on_toggle_callback = update_size_estimate
     steam_checklist.on_toggle_callback = update_size_estimate
+    settings_checklist.on_toggle_callback = update_size_estimate
+    appdata_checklist.on_toggle_callback = update_size_estimate
         
     def scan_drives():
         nonlocal detected_drives
@@ -542,7 +596,9 @@ def show_scan_results_screen(app):
     def check_drive_suitability():
         checked = folder_checklist.get_selected_folders()
         checked_games = steam_checklist.get_selected_games()
-        if not checked and not checked_games and not app.custom_items:
+        checked_settings = settings_checklist.get_selected_settings()
+        checked_apps = appdata_checklist.get_selected_apps()
+        if not checked and not checked_games and not app.custom_items and not checked_settings and not checked_apps:
             warning_lbl.configure(text="⚠️ Select at least one item to move.", text_color=WARNING_YELLOW)
             start_btn.configure(state="disabled", fg_color=BORDER_COLOR)
             return
@@ -563,10 +619,12 @@ def show_scan_results_screen(app):
         else:
             warning_lbl.configure(text="✓ Drive is ready.\nFormatting is required.", text_color=SUCCESS_GREEN)
             start_btn.configure(state="normal", text="Start Migration", fg_color=ACCENT_BLUE)
-
+ 
     def proceed_to_confirm():
         app.selected_folders = folder_checklist.get_selected_folders()
         app.selected_games = steam_checklist.get_selected_games()
+        app.selected_settings = settings_checklist.get_selected_settings()
+        app.selected_apps = appdata_checklist.get_selected_apps()
         show_format_warning_screen(app)
 
     back_btn = ctk.CTkButton(
@@ -824,6 +882,62 @@ def show_progress_screen(app):
             app.after_idle(lambda: show_export_welcome_screen(app))
             return
 
+        # Copy selected Settings (global to drive/system)
+        selected_settings = getattr(app, 'selected_settings', [])
+        if selected_settings and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Exporting Settings..."))
+            import settings_ops
+            
+            # Personalization Settings
+            if "Windows Personalization Settings" in selected_settings:
+                app.after_idle(lambda: detail_lbl.configure(text="Exporting Personalization Settings..."))
+                settings_dest = os.path.join(pcm_root, "settings")
+                os.makedirs(settings_dest, exist_ok=True)
+                settings_ops.export_personalization_settings(settings_dest)
+                
+            # Wi-Fi Networks
+            if "Wi-Fi Network Profiles" in selected_settings:
+                app.after_idle(lambda: detail_lbl.configure(text="Exporting Wi-Fi Network Profiles..."))
+                settings_dest = os.path.join(pcm_root, "settings")
+                os.makedirs(settings_dest, exist_ok=True)
+                settings_ops.export_wifi_profiles(settings_dest)
+
+        # Copy selected AppData Preferences (for each selected user profile)
+        selected_apps = getattr(app, 'selected_apps', [])
+        if selected_apps and not engine.cancelled:
+            app.after_idle(lambda: op_title.configure(text="Exporting AppData..."))
+            
+            for profile in app.selected_profiles:
+                if engine.cancelled:
+                    break
+                    
+                user_appdata_info = app.all_users_appdata_info.get(profile.username, {})
+                for app_name in selected_apps:
+                    if engine.cancelled:
+                        break
+                        
+                    info = user_appdata_info.get(app_name)
+                    if info and info.exists:
+                        app.after_idle(lambda a=app_name, u=profile.username:
+                                       detail_lbl.configure(text=f"Copying {a} for {u}..."))
+                        for item in info.items:
+                            if engine.cancelled:
+                                break
+                            original_path = item["path"]
+                            rel_path = item["rel_path"]
+                            
+                            dest_path = os.path.join(pcm_root, profile.username, "appdata", rel_path)
+                            
+                            if item["type"] == "folder":
+                                engine.copy_folder_recursive(original_path, dest_path)
+                            else:
+                                os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+                                engine.copy_file_with_conflict_resolution(original_path, dest_path)
+
+        if engine.cancelled:
+            app.after_idle(lambda: show_export_welcome_screen(app))
+            return
+
         # Copy selected Steam games (global to system)
         selected_games = getattr(app, 'selected_games', [])
         steam_manifest_data = []
@@ -902,7 +1016,9 @@ def show_progress_screen(app):
             source_users=user_manifests,
             total_size_bytes=engine.total_bytes_copied,
             steam_games=steam_manifest_data,
-            custom_items=custom_manifest_data
+            custom_items=custom_manifest_data,
+            settings=selected_settings,
+            appdata=selected_apps
         )
         
         # Step 4: Copy self to drive root

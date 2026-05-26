@@ -8,7 +8,7 @@ import customtkinter as ctk
 from gui.components import (
     PremiumCard, HeaderPanel, AppFonts, ScrollableFolderList, ScrollableSteamGamesList, ScrollableCustomItemList,
     ACCENT_BLUE, TEXT_PRIMARY, TEXT_SECONDARY, SUCCESS_GREEN, WARNING_YELLOW, DANGER_RED, BORDER_COLOR, CARD_COLOR,
-    BG_COLOR
+    BG_COLOR, ScrollableSettingsList, ScrollableAppDataList
 )
 import scanner
 import bookmarks
@@ -518,6 +518,10 @@ def show_network_sender_scanning(app):
         try:
             # Scan profile folders
             app.folders_info = scanner.scan_profile_folders(app.selected_profile.path)
+
+            # Scan AppData folders
+            from appdata_scanner import scan_profile_appdata
+            app.appdata_info = scan_profile_appdata(app.selected_profile.path)
             
             # Detect Steam games
             import steam_ops
@@ -564,6 +568,8 @@ def show_network_sender_checklist(app):
 
     tabview.add("Personal Folders")
     tabview.add("Steam Games")
+    tabview.add("Windows Settings")
+    tabview.add("AppData Preferences")
     tabview.add("Custom Items")
 
     # Personal folders checklist
@@ -577,6 +583,16 @@ def show_network_sender_checklist(app):
     steam_checklist.grid(row=0, column=0, sticky="nsew")
     tabview.tab("Steam Games").grid_rowconfigure(0, weight=1)
     tabview.tab("Steam Games").grid_columnconfigure(0, weight=1)
+
+    settings_checklist = ScrollableSettingsList(tabview.tab("Windows Settings"), border_width=0, corner_radius=0)
+    settings_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("Windows Settings").grid_rowconfigure(0, weight=1)
+    tabview.tab("Windows Settings").grid_columnconfigure(0, weight=1)
+
+    appdata_checklist = ScrollableAppDataList(tabview.tab("AppData Preferences"), getattr(app, 'appdata_info', {}), border_width=0, corner_radius=0)
+    appdata_checklist.grid(row=0, column=0, sticky="nsew")
+    tabview.tab("AppData Preferences").grid_rowconfigure(0, weight=1)
+    tabview.tab("AppData Preferences").grid_columnconfigure(0, weight=1)
 
     # Custom items checklist
     custom_checklist = None
@@ -759,6 +775,20 @@ def show_network_sender_checklist(app):
         # Custom items
         for item in app.custom_items:
             total_bytes += item['size_bytes']
+
+        # Settings
+        selected_settings = settings_checklist.get_selected_settings()
+        for name in selected_settings:
+            data = settings_checklist.checkboxes.get(name)
+            if data:
+                total_bytes += data['size_bytes']
+
+        # AppData
+        selected_apps = appdata_checklist.get_selected_apps()
+        for name in selected_apps:
+            info = app.appdata_info.get(name)
+            if info:
+                total_bytes += info.size_bytes
             
         total_bytes += int(total_bytes * 0.05) + (50 * 1024 * 1024)
         size_str = format_bytes(total_bytes)
@@ -771,8 +801,16 @@ def show_network_sender_checklist(app):
     for item in steam_checklist.checkboxes.values():
         item['checkbox'].configure(command=update_size_estimate)
 
+    for item in settings_checklist.checkboxes.values():
+        item['checkbox'].configure(command=update_size_estimate)
+
+    for item in appdata_checklist.checkboxes.values():
+        item['checkbox'].configure(command=update_size_estimate)
+
     folder_checklist.on_toggle_callback = update_size_estimate
     steam_checklist.on_toggle_callback = update_size_estimate
+    settings_checklist.on_toggle_callback = update_size_estimate
+    appdata_checklist.on_toggle_callback = update_size_estimate
 
     # Call initial list refresh AFTER size_summary_lbl is constructed!
     refresh_custom_items_list()
@@ -780,6 +818,8 @@ def show_network_sender_checklist(app):
     def proceed():
         app.selected_folders = folder_checklist.get_selected_folders()
         app.selected_games = steam_checklist.get_selected_games()
+        app.selected_settings = settings_checklist.get_selected_settings()
+        app.selected_apps = appdata_checklist.get_selected_apps()
         show_network_sender_connection(app)
 
     back_btn = ctk.CTkButton(
@@ -1020,6 +1060,81 @@ def initiate_network_sender(app, code, receiver_ip=None):
                     })
         except Exception as e:
             print(f"[Network] Bookmark export exception: {e}")
+
+        # Export and queue Windows Settings
+        selected_settings = getattr(app, 'selected_settings', [])
+        if selected_settings:
+            try:
+                import shutil
+                temp_settings_path = os.path.join(tempfile.gettempdir(), "_pcm_settings_net")
+                if os.path.exists(temp_settings_path):
+                    shutil.rmtree(temp_settings_path)
+                os.makedirs(temp_settings_path, exist_ok=True)
+                
+                import settings_ops
+                if "Windows Personalization Settings" in selected_settings:
+                    settings_ops.export_personalization_settings(temp_settings_path)
+                if "Wi-Fi Network Profiles" in selected_settings:
+                    settings_ops.export_wifi_profiles(temp_settings_path)
+                    
+                for root, dirs, files in os.walk(temp_settings_path):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        file_size = os.path.getsize(file_path)
+                        rel_path = os.path.relpath(file_path, temp_settings_path)
+                        files_to_send.append({
+                            'src_path': file_path,
+                            'rel_path': rel_path.replace("\\", "/"),
+                            'size': file_size,
+                            'category': 'Settings'
+                        })
+            except Exception as e:
+                print(f"[Network] Settings export exception: {e}")
+
+        # Export and queue AppData Preferences
+        selected_apps = getattr(app, 'selected_apps', [])
+        if selected_apps:
+            try:
+                from appdata_scanner import get_appdata_definitions
+                definitions = get_appdata_definitions(current_profile.path)
+                for app_name in selected_apps:
+                    items = definitions.get(app_name, [])
+                    for item in items:
+                        item_path = item["path"]
+                        rel_path = item["rel_path"]
+                        if os.path.exists(item_path):
+                            if item["type"] == "folder":
+                                for root, dirs, files in os.walk(item_path):
+                                    for file in files:
+                                        file_path = os.path.join(root, file)
+                                        try:
+                                            from copy_engine import is_reparse_point
+                                            if is_reparse_point(file_path):
+                                                continue
+                                            file_size = os.path.getsize(file_path)
+                                            sub_rel = os.path.relpath(file_path, item_path)
+                                            send_rel_path = os.path.normpath(os.path.join(rel_path, sub_rel))
+                                            files_to_send.append({
+                                                'src_path': file_path,
+                                                'rel_path': send_rel_path.replace("\\", "/"),
+                                                'size': file_size,
+                                                'category': 'AppData'
+                                            })
+                                        except Exception:
+                                            pass
+                            else:
+                                try:
+                                    file_size = os.path.getsize(item_path)
+                                    files_to_send.append({
+                                        'src_path': item_path,
+                                        'rel_path': rel_path.replace("\\", "/"),
+                                        'size': file_size,
+                                        'category': 'AppData'
+                                    })
+                                except Exception:
+                                    pass
+            except Exception as e:
+                print(f"[Network] AppData export exception: {e}")
 
         if not files_to_send:
             app.after(0, lambda: show_network_error(app, "No files found to migrate in the selected folders!"))
