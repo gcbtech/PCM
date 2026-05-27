@@ -27,3 +27,6 @@ env/
 # Editor settings
 .vscode/
 .idea/
+
+# Workspace file
+PCM.code-workspace
